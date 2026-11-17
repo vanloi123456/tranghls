@@ -1,0 +1,6 @@
+{
+  "name": "Học Liệu Số – Giáo Viên Sáng Tạo",
+  "description": "Không gian học liệu số tương tác dành cho giáo viên và học sinh tiểu học với Kho Ứng Dụng, Trò Chơi Tương Tác và Thí Nghiệm Mô Phỏng từ Gemini & Google AI Studio.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

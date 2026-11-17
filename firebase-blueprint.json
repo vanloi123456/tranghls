@@ -1,0 +1,135 @@
+{
+  "entities": {
+    "TeacherProfile": {
+      "title": "TeacherProfile",
+      "description": "Hồ sơ tài khoản người dùng với 5 tín dụng AI miễn phí mỗi ngày (tự động làm mới sau 24 giờ) và cập nhật qua mã kích hoạt",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID của người dùng",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Email người dùng",
+          "maxLength": 200
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Tên hiển thị của người dùng",
+          "maxLength": 150
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Ảnh đại diện tài khoản Google",
+          "maxLength": 500
+        },
+        "role": {
+          "type": "string",
+          "enum": ["teacher", "admin"],
+          "description": "Vai trò người dùng trong hệ thống"
+        },
+        "credits": {
+          "type": "integer",
+          "description": "Số tín dụng AI hiện có (mặc định 5 tín dụng AI miễn phí mỗi ngày, tự động làm mới sau 24 giờ; trừ 1 khi xem nội dung Kho ứng dụng/Học liệu số/Thí nghiệm mô phỏng và trừ 2 khi truy cập Học liệu số/Thí nghiệm mô phỏng)"
+        },
+        "lastFreeResetAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Thời điểm làm mới 5 tín dụng AI miễn phí gần nhất"
+        },
+        "lastRedeemedCode": {
+          "type": "string",
+          "description": "Mã kích hoạt gần nhất vừa sử dụng",
+          "maxLength": 64,
+          "pattern": "^[A-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Thời điểm tạo hồ sơ"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Thời điểm cập nhật gần nhất"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "fullName",
+        "role",
+        "credits",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "PromoCode": {
+      "title": "PromoCode",
+      "description": "Mã kích hoạt tín dụng AI do Quản trị viên phát hành để giáo viên nạp thêm tín dụng",
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Chuỗi mã kích hoạt duy nhất viết hoa",
+          "maxLength": 64,
+          "pattern": "^[A-Z0-9_\\-]+$"
+        },
+        "credit_value": {
+          "type": "integer",
+          "description": "Số tín dụng AI được cộng vào tài khoản khi kích hoạt thành công"
+        },
+        "is_used": {
+          "type": "boolean",
+          "description": "Trạng thái đã được sử dụng hay chưa"
+        },
+        "used_by": {
+          "type": "string",
+          "description": "UID của người dùng đã kích hoạt mã (hoặc null nếu chưa sử dụng)"
+        },
+        "used_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Thời điểm mã được sử dụng"
+        },
+        "created_by": {
+          "type": "string",
+          "format": "email",
+          "description": "Email quản trị viên tạo mã",
+          "maxLength": 200
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Thời điểm tạo mã kích hoạt"
+        }
+      },
+      "required": [
+        "code",
+        "credit_value",
+        "is_used",
+        "used_by",
+        "created_by",
+        "created_at"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/TeacherProfile"
+      },
+      "description": "Lưu hồ sơ tài khoản và số dư tín dụng AI (5 tín dụng AI miễn phí mỗi ngày, làm mới sau 24 giờ)"
+    },
+    "/promo_codes/{codeId}": {
+      "schema": {
+        "$ref": "#/entities/PromoCode"
+      },
+      "description": "Lưu danh sách mã kích hoạt tín dụng AI và trạng thái sử dụng một lần"
+    }
+  }
+}

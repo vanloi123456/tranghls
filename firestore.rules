@@ -1,0 +1,228 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidPromoCodeId(codeId) {
+      return codeId is string && codeId.size() >= 3 && codeId.size() <= 64 && codeId.matches('^[A-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isOwner(userId) {
+      return isVerified() && request.auth.uid == userId;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerified() && request.auth.token.email == 'vanloiphuhiep.09@gmail.com';
+    }
+
+    function isAdmin() {
+      return isBootstrappedAdmin() ||
+        (isVerified() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+          'uid',
+          'email',
+          'fullName',
+          'role',
+          'credits',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'email',
+          'fullName',
+          'photoURL',
+          'role',
+          'credits',
+          'lastFreeResetAt',
+          'lastRedeemedCode',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.uid) &&
+        data.email is string && data.email.size() > 3 && data.email.size() <= 200 &&
+        data.fullName is string && data.fullName.size() > 0 && data.fullName.size() <= 150 &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+        (!('lastFreeResetAt' in data) || data.lastFreeResetAt is timestamp) &&
+        (!('lastRedeemedCode' in data) || isValidPromoCodeId(data.lastRedeemedCode)) &&
+        data.role is string && data.role in ['teacher', 'admin'] &&
+        data.credits is int && data.credits >= 0 && data.credits <= 1000000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidPromoCode(data) {
+      return data.keys().hasAll([
+          'code',
+          'credit_value',
+          'is_used',
+          'used_by',
+          'created_by',
+          'created_at'
+        ]) &&
+        data.keys().hasOnly([
+          'code',
+          'credit_value',
+          'is_used',
+          'used_by',
+          'used_at',
+          'created_by',
+          'created_at'
+        ]) &&
+        isValidPromoCodeId(data.code) &&
+        data.credit_value is int && data.credit_value > 0 && data.credit_value <= 100000 &&
+        data.is_used is bool &&
+        (data.used_by == null || isValidId(data.used_by)) &&
+        (!('used_at' in data) || data.used_at is timestamp) &&
+        data.created_by is string && data.created_by.size() > 3 && data.created_by.size() <= 200 &&
+        data.created_at is timestamp;
+    }
+
+    function isValidPromoRedemption(codeId, prevCredits, nextCredits) {
+      return isValidPromoCodeId(codeId) &&
+        exists(/databases/$(database)/documents/promo_codes/$(codeId)) &&
+        get(/databases/$(database)/documents/promo_codes/$(codeId)).data.is_used == false &&
+        getAfter(/databases/$(database)/documents/promo_codes/$(codeId)).data.is_used == true &&
+        getAfter(/databases/$(database)/documents/promo_codes/$(codeId)).data.used_by == request.auth.uid &&
+        nextCredits == prevCredits + get(/databases/$(database)/documents/promo_codes/$(codeId)).data.credit_value;
+    }
+
+    // --- Collection: /admins/{adminUid} ---
+    match /admins/{adminUid} {
+      allow get: if isValidId(adminUid) && (isOwner(adminUid) || isBootstrappedAdmin());
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    // --- Collection: /users/{userId} ---
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if isValidId(userId) &&
+        isOwner(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().uid == request.auth.uid &&
+        incoming().email == request.auth.token.email &&
+        incoming().role == 'teacher' &&
+        incoming().credits == 5 &&
+        (!('lastFreeResetAt' in incoming()) || incoming().lastFreeResetAt == request.time) &&
+        !('lastRedeemedCode' in incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidId(userId) &&
+        isValidUserProfile(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().email == existing().email &&
+        incoming().role == existing().role &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action 1: Admin top-up, credit adjustment, or issuing activation code to teacher
+          (
+            isAdmin() &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['credits', 'lastRedeemedCode', 'updatedAt'])
+          ) ||
+          // Action 2: Owner syncs display name / photo on login
+          (
+            isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['fullName', 'photoURL', 'updatedAt'])
+          ) ||
+          // Action 3: Owner consumes 1 (view content) or 2 (access Học liệu số / Thí nghiệm mô phỏng) AI credits (no negative credits)
+          (
+            isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['credits', 'updatedAt']) &&
+            incoming().credits >= 0 &&
+            (existing().credits - incoming().credits) in [1, 2]
+          ) ||
+          // Action 4: Atomic Promo Code redemption adding exact credit_value from /promo_codes/{codeId}
+          (
+            isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['credits', 'lastRedeemedCode', 'updatedAt']) &&
+            ('lastRedeemedCode' in incoming()) &&
+            isValidPromoRedemption(incoming().lastRedeemedCode, existing().credits, incoming().credits)
+          ) ||
+          // Action 5: 24-hour automatic daily free credit reset (refresh to 5 credits if < 5 and >= 24h since lastFreeResetAt)
+          (
+            isOwner(userId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['credits', 'lastFreeResetAt', 'updatedAt']) &&
+            existing().credits < 5 &&
+            incoming().credits == 5 &&
+            ('lastFreeResetAt' in incoming()) &&
+            incoming().lastFreeResetAt == request.time &&
+            request.time >= (('lastFreeResetAt' in existing()) ? existing().lastFreeResetAt : existing().createdAt) + duration.value(24, 'h')
+          )
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // --- Collection: /promo_codes/{codeId} ---
+    match /promo_codes/{codeId} {
+      allow get: if isValidPromoCodeId(codeId) && isVerified();
+      allow list: if isBootstrappedAdmin();
+
+      allow create: if isValidPromoCodeId(codeId) &&
+        isAdmin() &&
+        isValidPromoCode(incoming()) &&
+        incoming().code == codeId &&
+        incoming().created_at == request.time &&
+        (
+          (
+            incoming().is_used == false &&
+            incoming().used_by == null &&
+            !('used_at' in incoming())
+          ) ||
+          (
+            incoming().is_used == true &&
+            isValidId(incoming().used_by) &&
+            incoming().used_at == request.time
+          )
+        );
+
+      allow update: if isValidPromoCodeId(codeId) &&
+        isVerified() &&
+        isValidPromoCode(incoming()) &&
+        incoming().code == existing().code &&
+        incoming().credit_value == existing().credit_value &&
+        incoming().created_by == existing().created_by &&
+        incoming().created_at == existing().created_at &&
+        existing().is_used == false &&
+        incoming().is_used == true &&
+        (incoming().used_by == request.auth.uid || (isAdmin() && isValidId(incoming().used_by))) &&
+        incoming().used_at == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['is_used', 'used_by', 'used_at']);
+
+      allow delete: if isValidPromoCodeId(codeId) && isAdmin();
+    }
+  }
+}

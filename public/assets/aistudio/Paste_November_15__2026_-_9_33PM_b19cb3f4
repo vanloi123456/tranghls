@@ -1,0 +1,1067 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kéo Co Kiến Thức - Chinh Phục Tri Thức</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #f0f9ff;
+            user-select: none;
+        }
+
+        /* Animations */
+        @keyframes tugging {
+            0% { transform: translateX(0px) rotate(0deg); }
+            25% { transform: translateX(-2px) rotate(-1deg); }
+            50% { transform: translateX(0px) rotate(0deg); }
+            75% { transform: translateX(2px) rotate(1deg); }
+            100% { transform: translateX(0px) rotate(0deg); }
+        }
+        .anim-tug { animation: tugging 0.5s infinite; }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .anim-pop { animation: pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        @keyframes bounce-slow {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .anim-bounce { animation: bounce-slow 2s infinite; }
+
+        @keyframes fireworks {
+            0% { transform: translate(var(--x), var(--initialY)); width: var(--initialSize); opacity: 1; }
+            50% { width: 0.5rem; opacity: 1; }
+            100% { width: 0; opacity: 0; transform: translate(var(--x), var(--y)); }
+        }
+        .firework {
+            position: absolute;
+            top: 50%; left: 50%;
+            width: 0.5rem; height: 0.5rem;
+            border-radius: 50%;
+            animation: fireworks 1s ease-out forwards;
+        }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
+            20%, 40%, 60%, 80% { transform: translateX(5px); }
+        }
+        .anim-shake { animation: shake 0.5s; }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.9);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-3d {
+            transition: all 0.1s;
+            box-shadow: 0 4px 0 0 var(--shadow-color);
+        }
+        .btn-3d:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 0 var(--shadow-color);
+        }
+
+        .rope-pattern {
+            background-image: repeating-linear-gradient(
+                45deg,
+                #8B4513 0px,
+                #8B4513 10px,
+                #A0522D 10px,
+                #A0522D 20px
+            );
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useCallback } = React;
+
+        // --- TẠO ÂM THANH ĐƠN GIẢN (Web Audio API) ---
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const playSound = (type) => {
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            const osc = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+
+            if (type === 'correct') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(440, audioCtx.currentTime); // A4
+                osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.1); // A5
+                gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'wrong') {
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(150, audioCtx.currentTime + 0.3);
+                gainNode.gain.setValueAtTime(0.5, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            } else if (type === 'win') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+                setTimeout(() => {
+                    if(audioCtx.state === 'suspended') return;
+                    const osc2 = audioCtx.createOscillator();
+                    const gain2 = audioCtx.createGain();
+                    osc2.connect(gain2); gain2.connect(audioCtx.destination);
+                    osc2.type = 'square';
+                    osc2.frequency.setValueAtTime(659.25, audioCtx.currentTime); // E5
+                    gain2.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain2.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                    osc2.start(); osc2.stop(audioCtx.currentTime + 0.5);
+                }, 150);
+                setTimeout(() => {
+                    if(audioCtx.state === 'suspended') return;
+                    const osc3 = audioCtx.createOscillator();
+                    const gain3 = audioCtx.createGain();
+                    osc3.connect(gain3); gain3.connect(audioCtx.destination);
+                    osc3.type = 'square';
+                    osc3.frequency.setValueAtTime(783.99, audioCtx.currentTime); // G5
+                    gain3.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                    gain3.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 1);
+                    osc3.start(); osc3.stop(audioCtx.currentTime + 1);
+                }, 300);
+                gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.5);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.5);
+            }
+        };
+
+        // --- COMPONENTS ---
+
+        // Hiệu ứng pháo hoa
+        const Fireworks = () => {
+            const colors = ['#ef4444', '#3b82f6', '#f59e0b', '#10b981', '#a855f7'];
+            const particles = Array.from({ length: 30 });
+            return (
+                <div className="absolute inset-0 pointer-events-none z-50 overflow-hidden">
+                    {particles.map((_, i) => {
+                        const style = {
+                            '--x': `${(Math.random() - 0.5) * 400}px`,
+                            '--y': `${(Math.random() - 0.5) * 400}px`,
+                            '--initialY': `${(Math.random() - 0.5) * 50}px`,
+                            '--initialSize': `${Math.random() * 0.5 + 0.2}rem`,
+                            backgroundColor: colors[Math.floor(Math.random() * colors.length)],
+                            left: `${Math.random() * 100}%`,
+                            top: `${Math.random() * 100}%`
+                        };
+                        return <div key={i} className="firework" style={style}></div>;
+                    })}
+                </div>
+            );
+        };
+
+        const App = () => {
+            // STATE CHÍNH
+            const [phase, setPhase] = useState('setup'); // setup, create_questions, playing, end
+            const fileInputRef = useRef(null);
+            
+            // THIẾT LẬP (Mặc định trống)
+            const [settings, setSettings] = useState({
+                gameName: '',
+                team1Name: '',
+                team2Name: '',
+                stepsPerCorrect: '',
+                isTimed: false,
+                timeLimit: '',
+                turnMode: 'alternate' // 'alternate' hoặc 'manual'
+            });
+
+            // CÂU HỎI (Mặc định trống)
+            const [questions, setQuestions] = useState([]);
+
+            // TRẠNG THÁI TRÒ CHƠI
+            const [gameState, setGameState] = useState({
+                currentQIndex: 0,
+                currentTurn: 1, // 1: Đội 1 (Đỏ), 2: Đội 2 (Xanh)
+                ropePos: 0, // 0 là giữa, âm là về Đội 1, dương là về Đội 2. Giới hạn -100 đến 100
+                team1Score: 0,
+                team2Score: 0,
+                isPaused: false,
+                timeLeft: 0,
+                feedback: null, // 'correct', 'wrong', null
+                winner: null, // 1 hoặc 2
+                playedQuestions: [] // Lưu ID các câu đã chơi
+            });
+
+            const [soundEnabled, setSoundEnabled] = useState(true);
+
+            // --- FULLSCREEN LOGIC ---
+            const toggleFullScreen = () => {
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(err => {
+                        console.log(`Error attempting to enable fullscreen: ${err.message}`);
+                    });
+                } else {
+                    if (document.exitFullscreen) {
+                        document.exitFullscreen();
+                    }
+                }
+            };
+
+            // --- HANDLERS CHO THIẾT LẬP ---
+            const handleSettingChange = (e) => {
+                const { name, value, type, checked } = e.target;
+                setSettings(prev => ({
+                    ...prev,
+                    [name]: type === 'checkbox' ? checked : value
+                }));
+            };
+
+            // --- HANDLERS CHO CÂU HỎI ---
+            const addQuestion = (type = 'multiple') => {
+                const newQ = {
+                    id: Date.now(),
+                    type: type,
+                    text: '',
+                    options: type === 'multiple' ? ['', '', '', ''] : [],
+                    correctAnswer: ''
+                };
+                setQuestions([...questions, newQ]);
+            };
+
+            const updateQuestion = (id, field, value, optionIndex = null) => {
+                setQuestions(questions.map(q => {
+                    if (q.id === id) {
+                        if (optionIndex !== null) {
+                            const newOptions = [...q.options];
+                            newOptions[optionIndex] = value;
+                            return { ...q, options: newOptions };
+                        }
+                        return { ...q, [field]: value };
+                    }
+                    return q;
+                }));
+            };
+
+            const deleteQuestion = (id) => {
+                if(window.confirm("Bạn có chắc chắn muốn xóa câu hỏi này?")) {
+                    setQuestions(questions.filter(q => q.id !== id));
+                }
+            };
+
+            const moveQuestion = (index, direction) => {
+                const newQ = [...questions];
+                if (direction === 'up' && index > 0) {
+                    [newQ[index - 1], newQ[index]] = [newQ[index], newQ[index - 1]];
+                } else if (direction === 'down' && index < newQ.length - 1) {
+                    [newQ[index + 1], newQ[index]] = [newQ[index], newQ[index + 1]];
+                }
+                setQuestions(newQ);
+            };
+
+            const deleteAllQuestions = () => {
+                if(window.confirm("CẢNH BÁO: Xóa TOÀN BỘ câu hỏi bạn đã nhập?")) {
+                    setQuestions([]);
+                }
+            };
+
+            // --- QUẢN LÝ NHẬP/XUẤT FILE WORD ---
+            const parseQuestionsFromText = (text) => {
+                const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+                let newQuestions = [];
+                let currentQ = null;
+                let newSettings = { ...settings };
+                
+                for(let i=0; i<lines.length; i++) {
+                    let line = lines[i];
+                    
+                    if (line.toLowerCase().startsWith('tên trò chơi:')) { newSettings.gameName = line.split(':')[1].trim(); continue; }
+                    if (line.toLowerCase().startsWith('đội 1:')) { newSettings.team1Name = line.split(':')[1].trim(); continue; }
+                    if (line.toLowerCase().startsWith('đội 2:')) { newSettings.team2Name = line.split(':')[1].trim(); continue; }
+                    
+                    let qMatch = line.match(/^Câu\s*\d+\s*[:\.\-]\s*(.*)/i);
+                    if (qMatch) {
+                        if (currentQ) newQuestions.push(currentQ);
+                        currentQ = {
+                            id: Date.now() + i,
+                            type: 'short',
+                            text: qMatch[1].trim(),
+                            options: ['', '', '', ''],
+                            correctAnswer: ''
+                        };
+                        continue;
+                    }
+                    
+                    if (currentQ) {
+                        let optMatch = line.match(/^([A-D])[\.\:\)]\s*(.*)/i);
+                        if (optMatch) {
+                            currentQ.type = 'multiple';
+                            let optIdx = optMatch[1].toUpperCase().charCodeAt(0) - 65;
+                            if (optIdx >= 0 && optIdx <= 3) {
+                                currentQ.options[optIdx] = optMatch[2].trim();
+                            }
+                        } else {
+                            let ansMatch = line.match(/^Đáp\s*án\s*[:\.\-]\s*(.*)/i);
+                            if (ansMatch) {
+                                let ans = ansMatch[1].trim();
+                                if (currentQ.type === 'multiple') {
+                                    let ansChar = ans.charAt(0).toUpperCase();
+                                    if (['A','B','C','D'].includes(ansChar)) {
+                                        currentQ.correctAnswer = (ansChar.charCodeAt(0) - 65).toString();
+                                    }
+                                } else {
+                                    currentQ.correctAnswer = ans;
+                                }
+                            } else {
+                                // Nếu là dòng văn bản bình thường, nối vào nội dung câu hỏi
+                                if (currentQ.type === 'short' && !currentQ.correctAnswer && !line.startsWith('---')) {
+                                    if (currentQ.text === "") currentQ.text = line;
+                                    else currentQ.text += "\n" + line;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (currentQ) newQuestions.push(currentQ);
+                
+                if (newQuestions.length > 0) {
+                    setQuestions(newQuestions);
+                    setSettings(newSettings);
+                    alert(`Đã nhập thành công ${newQuestions.length} câu hỏi từ file Word!`);
+                } else {
+                    alert("Không tìm thấy câu hỏi nào! Hãy đảm bảo file Word có cấu trúc: 'Câu 1: ...', 'A. ...', 'Đáp án: ...'");
+                }
+            };
+
+            const exportToWord = () => {
+                if (questions.length === 0) {
+                    alert("Chưa có câu hỏi nào để xuất!");
+                    return;
+                }
+                let content = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+                <head><meta charset='utf-8'><title>Bo Cau Hoi</title></head><body>`;
+                content += `<h2>Kéo Co Kiến Thức - Bộ Câu Hỏi</h2>`;
+                content += `<p>Tên trò chơi: ${settings.gameName || ''}</p>`;
+                content += `<p>Đội 1: ${settings.team1Name || ''}</p>`;
+                content += `<p>Đội 2: ${settings.team2Name || ''}</p>`;
+                content += `<p>---</p>`;
+                
+                questions.forEach((q, i) => {
+                    content += `<p><b>Câu ${i+1}: ${q.text}</b></p>`;
+                    if (q.type === 'multiple') {
+                        content += `<p>A. ${q.options[0] || ''}</p>`;
+                        content += `<p>B. ${q.options[1] || ''}</p>`;
+                        content += `<p>C. ${q.options[2] || ''}</p>`;
+                        content += `<p>D. ${q.options[3] || ''}</p>`;
+                        
+                        let correctChar = '';
+                        if(q.correctAnswer !== '') {
+                            correctChar = String.fromCharCode(65 + parseInt(q.correctAnswer));
+                        }
+                        content += `<p>Đáp án: ${correctChar}</p>`;
+                    } else {
+                        content += `<p>Đáp án: ${q.correctAnswer}</p>`;
+                    }
+                    content += `<p></p>`;
+                });
+                content += `</body></html>`;
+                
+                const blob = new Blob(['\ufeff', content], { type: 'application/msword' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                const safeName = settings.gameName ? settings.gameName.replace(/[^a-z0-9]/gi, '_').toLowerCase() : 'bocauhoi';
+                link.download = `keoco_${safeName}.doc`;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+            };
+
+            const handleImportWord = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                
+                const ext = file.name.split('.').pop().toLowerCase();
+                
+                if (ext === 'docx') {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        // Sử dụng mammoth.js để giải mã file .docx thực thụ
+                        mammoth.extractRawText({arrayBuffer: event.target.result})
+                            .then((result) => {
+                                parseQuestionsFromText(result.value);
+                            })
+                            .catch(err => {
+                                alert("Lỗi khi đọc file DOCX: " + err.message);
+                            });
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else if (ext === 'doc' || ext === 'txt') {
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        let text = event.target.result;
+                        if (ext === 'doc') {
+                            // Chuyển đổi file doc(html) thành plain text
+                            const tempDiv = document.createElement('div');
+                            tempDiv.innerHTML = text;
+                            text = tempDiv.innerText || tempDiv.textContent;
+                        }
+                        parseQuestionsFromText(text);
+                    };
+                    reader.readAsText(file);
+                } else if (ext === 'json') {
+                     // Hỗ trợ dự phòng trường hợp giáo viên dùng file .json cũ
+                     const reader = new FileReader();
+                     reader.onload = (event) => {
+                          try {
+                               const data = JSON.parse(event.target.result);
+                               if(data.questions) {
+                                   setQuestions(data.questions);
+                                   if(data.settings) setSettings(data.settings);
+                                   alert("Đã nhập thành công từ file JSON cũ!");
+                               }
+                          } catch (err) {
+                              alert("File không hợp lệ");
+                          }
+                     };
+                     reader.readAsText(file);
+                } else {
+                    alert("Vui lòng chọn file Word (.doc, .docx) hoặc .txt");
+                }
+                e.target.value = null; // reset
+            };
+
+            // --- GAME LOGIC ---
+            const startGame = () => {
+                // Validation
+                if (!settings.gameName || !settings.team1Name || !settings.team2Name || !settings.stepsPerCorrect) {
+                    alert("Vui lòng điền đầy đủ Tên trò chơi, Tên 2 đội và Số bước kéo!");
+                    return;
+                }
+                if (questions.length === 0) {
+                    alert("Vui lòng tạo ít nhất 1 câu hỏi!");
+                    setPhase('create_questions');
+                    return;
+                }
+                // Check if questions are filled
+                const invalidQ = questions.find(q => !q.text || (q.type === 'multiple' && q.options.some(o => !o)) || q.correctAnswer === '');
+                if (invalidQ) {
+                    alert("Có câu hỏi chưa được điền đầy đủ nội dung hoặc chưa chọn đáp án đúng!");
+                    setPhase('create_questions');
+                    return;
+                }
+
+                setGameState({
+                    currentQIndex: 0,
+                    currentTurn: 1,
+                    ropePos: 0,
+                    team1Score: 0,
+                    team2Score: 0,
+                    isPaused: false,
+                    timeLeft: settings.isTimed ? parseInt(settings.timeLimit) || 30 : 0,
+                    feedback: null,
+                    winner: null,
+                    playedQuestions: []
+                });
+                setPhase('playing');
+            };
+
+            const handleAnswer = (answerGiven) => {
+                if (gameState.isPaused || gameState.feedback || gameState.winner) return;
+
+                const currentQ = questions[gameState.currentQIndex];
+                const isCorrect = answerGiven.toString().toLowerCase() === currentQ.correctAnswer.toString().toLowerCase();
+
+                if (isCorrect) {
+                    if (soundEnabled) playSound('correct');
+                    const step = parseInt(settings.stepsPerCorrect);
+                    const newPos = gameState.currentTurn === 1 ? gameState.ropePos - step : gameState.ropePos + step;
+                    
+                    let newScore1 = gameState.team1Score;
+                    let newScore2 = gameState.team2Score;
+                    if(gameState.currentTurn === 1) newScore1++; else newScore2++;
+
+                    setGameState(prev => ({
+                        ...prev,
+                        feedback: 'correct',
+                        ropePos: newPos,
+                        team1Score: newScore1,
+                        team2Score: newScore2,
+                        playedQuestions: [...prev.playedQuestions, currentQ.id]
+                    }));
+
+                    // Check Win
+                    setTimeout(() => {
+                        if (newPos <= -100) {
+                            if(soundEnabled) playSound('win');
+                            setGameState(prev => ({ ...prev, winner: 1 }));
+                            setPhase('end');
+                        } else if (newPos >= 100) {
+                            if(soundEnabled) playSound('win');
+                            setGameState(prev => ({ ...prev, winner: 2 }));
+                            setPhase('end');
+                        } else {
+                            nextTurn();
+                        }
+                    }, 2000);
+
+                } else {
+                    if (soundEnabled) playSound('wrong');
+                    setGameState(prev => ({
+                        ...prev,
+                        feedback: 'wrong',
+                        playedQuestions: [...prev.playedQuestions, currentQ.id]
+                    }));
+                    setTimeout(() => {
+                        nextTurn();
+                    }, 2000);
+                }
+            };
+
+            const nextTurn = () => {
+                setGameState(prev => {
+                    let nextIndex = prev.currentQIndex + 1;
+                    if (nextIndex >= questions.length) {
+                        // Hết câu hỏi
+                        alert("Đã hết câu hỏi! Trò chơi kết thúc hòa hoặc chưa có đội nào kéo qua vạch.");
+                        return { ...prev, winner: 'draw', feedback: null };
+                    }
+                    return {
+                        ...prev,
+                        feedback: null,
+                        currentQIndex: nextIndex,
+                        currentTurn: settings.turnMode === 'alternate' ? (prev.currentTurn === 1 ? 2 : 1) : prev.currentTurn,
+                        timeLeft: settings.isTimed ? parseInt(settings.timeLimit) || 30 : 0
+                    };
+                });
+                if(gameState.winner === 'draw') setPhase('end');
+            };
+
+            // Timer logic
+            useEffect(() => {
+                let interval = null;
+                if (phase === 'playing' && settings.isTimed && !gameState.isPaused && !gameState.feedback && !gameState.winner && gameState.timeLeft > 0) {
+                    interval = setInterval(() => {
+                        setGameState(prev => {
+                            if (prev.timeLeft <= 1) {
+                                clearInterval(interval);
+                                // Time out -> Wrong answer behavior
+                                if (soundEnabled) playSound('wrong');
+                                setTimeout(nextTurn, 2000);
+                                return { ...prev, timeLeft: 0, feedback: 'wrong' };
+                            }
+                            return { ...prev, timeLeft: prev.timeLeft - 1 };
+                        });
+                    }, 1000);
+                }
+                return () => clearInterval(interval);
+            }, [phase, settings.isTimed, gameState.isPaused, gameState.feedback, gameState.winner, gameState.timeLeft]);
+
+
+            // --- RENDERERS ---
+
+            const renderSetup = () => (
+                <div className="max-w-4xl mx-auto p-6 mt-10 glass-panel rounded-2xl anim-pop">
+                    <h1 className="text-4xl font-black text-center text-blue-600 mb-8 drop-shadow-md uppercase">
+                        Thiết Lập Trò Chơi
+                    </h1>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div className="col-span-1 md:col-span-2">
+                            <label className="block text-gray-700 font-bold mb-2">Tên Trò Chơi (Chủ đề):</label>
+                            <input type="text" name="gameName" value={settings.gameName} onChange={handleSettingChange} 
+                                className="w-full p-4 text-xl border-2 border-blue-300 rounded-xl focus:outline-none focus:border-blue-500 shadow-inner placeholder-gray-400" placeholder="VD: Ôn tập Toán lớp 3..."/>
+                        </div>
+
+                        <div className="bg-red-50 p-4 rounded-xl border-2 border-red-200">
+                            <label className="block text-red-700 font-bold mb-2 text-lg"><i className="fa-solid fa-flag text-red-500 mr-2"></i>Tên Đội 1 (Bên Trái):</label>
+                            <input type="text" name="team1Name" value={settings.team1Name} onChange={handleSettingChange} 
+                                className="w-full p-3 border-2 border-red-300 rounded-lg focus:outline-none focus:border-red-500" placeholder="..."/>
+                        </div>
+
+                        <div className="bg-blue-50 p-4 rounded-xl border-2 border-blue-200">
+                            <label className="block text-blue-700 font-bold mb-2 text-lg"><i className="fa-solid fa-flag text-blue-500 mr-2"></i>Tên Đội 2 (Bên Phải):</label>
+                            <input type="text" name="team2Name" value={settings.team2Name} onChange={handleSettingChange} 
+                                className="w-full p-3 border-2 border-blue-300 rounded-lg focus:outline-none focus:border-blue-500" placeholder="..."/>
+                        </div>
+
+                        <div>
+                            <label className="block text-gray-700 font-bold mb-2">Số bước kéo / Câu đúng (1-50):</label>
+                            <input type="number" name="stepsPerCorrect" value={settings.stepsPerCorrect} onChange={handleSettingChange} min="1" max="50"
+                                className="w-full p-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500" placeholder="VD: 15"/>
+                            <p className="text-sm text-gray-500 mt-1">Sợi dây dài 100 bước mỗi bên. Nhập 20 nghĩa là cần 5 câu đúng liên tiếp để thắng.</p>
+                        </div>
+
+                        <div>
+                            <label className="block text-gray-700 font-bold mb-2">Luật lượt chơi:</label>
+                            <select name="turnMode" value={settings.turnMode} onChange={handleSettingChange} className="w-full p-3 border-2 border-gray-300 rounded-lg focus:outline-none focus:border-green-500">
+                                <option value="alternate">Hai đội luân phiên (Đội 1 {'->'} Đội 2)</option>
+                                <option value="manual">Giáo viên chọn đội trả lời</option>
+                            </select>
+                        </div>
+
+                        <div className="col-span-1 md:col-span-2 bg-yellow-50 p-4 rounded-xl border-2 border-yellow-200 flex items-center justify-between">
+                            <div>
+                                <label className="flex items-center text-yellow-800 font-bold text-lg cursor-pointer">
+                                    <input type="checkbox" name="isTimed" checked={settings.isTimed} onChange={handleSettingChange} className="mr-3 w-6 h-6 text-yellow-500 rounded focus:ring-yellow-500"/>
+                                    Sử dụng đồng hồ đếm ngược
+                                </label>
+                            </div>
+                            {settings.isTimed && (
+                                <div className="flex items-center">
+                                    <span className="mr-2 font-bold text-gray-700">Thời gian (giây):</span>
+                                    <input type="number" name="timeLimit" value={settings.timeLimit} onChange={handleSettingChange} min="5"
+                                        className="w-24 p-2 border-2 border-gray-300 rounded-lg text-center" placeholder="VD: 30"/>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className="mt-8 flex justify-center space-x-6">
+                        <button onClick={() => setPhase('create_questions')} className="px-8 py-4 bg-purple-500 text-white font-bold rounded-xl text-xl btn-3d" style={{'--shadow-color': '#7e22ce'}}>
+                            <i className="fa-solid fa-list-check mr-2"></i> Soạn Câu Hỏi ({questions.length})
+                        </button>
+                        <button onClick={startGame} className="px-8 py-4 bg-green-500 text-white font-bold rounded-xl text-xl btn-3d" style={{'--shadow-color': '#166534'}}>
+                            <i className="fa-solid fa-play mr-2"></i> Bắt Đầu Chơi
+                        </button>
+                    </div>
+                </div>
+            );
+
+            const renderQuestionManager = () => (
+                <div className="max-w-5xl mx-auto p-6 mt-10 glass-panel rounded-2xl anim-pop">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-6 border-b pb-4 gap-4">
+                        <h2 className="text-3xl font-black text-purple-700 uppercase"><i className="fa-solid fa-pen-to-square mr-3"></i>Soạn Bộ Câu Hỏi</h2>
+                        <div className="flex flex-wrap gap-2 justify-center">
+                            <button onClick={() => fileInputRef.current.click()} className="px-4 py-2 bg-indigo-100 text-indigo-700 font-bold rounded-lg hover:bg-indigo-200 transition">
+                                <i className="fa-solid fa-file-word mr-2"></i> Nhập từ Word
+                            </button>
+                            <button onClick={exportToWord} className="px-4 py-2 bg-blue-100 text-blue-700 font-bold rounded-lg hover:bg-blue-200 transition">
+                                <i className="fa-solid fa-file-word mr-2"></i> Xuất ra Word
+                            </button>
+                            <button onClick={() => setPhase('setup')} className="px-4 py-2 bg-gray-500 text-white font-bold rounded-lg hover:bg-gray-600 transition">
+                                <i className="fa-solid fa-arrow-left mr-2"></i> Quay Lại
+                            </button>
+                            <input type="file" accept=".doc,.docx,.txt,.json" ref={fileInputRef} onChange={handleImportWord} className="hidden" style={{display: 'none'}} />
+                        </div>
+                    </div>
+
+                    <div className="flex gap-4 mb-6">
+                        <button onClick={() => addQuestion('multiple')} className="flex-1 py-3 bg-blue-100 text-blue-700 border-2 border-blue-400 font-bold rounded-xl hover:bg-blue-200 transition">
+                            <i className="fa-solid fa-plus-circle mr-2"></i> Thêm Câu Hỏi Trắc Nghiệm
+                        </button>
+                        <button onClick={() => addQuestion('short')} className="flex-1 py-3 bg-green-100 text-green-700 border-2 border-green-400 font-bold rounded-xl hover:bg-green-200 transition">
+                            <i className="fa-solid fa-plus-circle mr-2"></i> Thêm Câu Trả Lời Ngắn
+                        </button>
+                        {questions.length > 0 && (
+                             <button onClick={deleteAllQuestions} className="px-4 py-3 bg-red-100 text-red-700 border-2 border-red-400 font-bold rounded-xl hover:bg-red-200 transition" title="Xóa tất cả">
+                                <i className="fa-solid fa-trash-can"></i>
+                             </button>
+                        )}
+                    </div>
+
+                    {questions.length === 0 ? (
+                        <div className="text-center p-12 bg-gray-50 rounded-xl border-2 border-dashed border-gray-300">
+                            <i className="fa-regular fa-folder-open text-6xl text-gray-300 mb-4"></i>
+                            <p className="text-xl text-gray-500 font-bold">Chưa có câu hỏi nào. Hãy thêm câu hỏi mới!</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-6 max-h-[60vh] overflow-y-auto pr-2">
+                            {questions.map((q, index) => (
+                                <div key={q.id} className="p-4 bg-white border-2 border-gray-200 rounded-xl shadow-sm relative group">
+                                    <div className="absolute top-2 right-2 flex space-x-2 opacity-50 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => moveQuestion(index, 'up')} disabled={index === 0} className="p-2 text-gray-500 hover:text-blue-500 disabled:opacity-30"><i className="fa-solid fa-arrow-up"></i></button>
+                                        <button onClick={() => moveQuestion(index, 'down')} disabled={index === questions.length - 1} className="p-2 text-gray-500 hover:text-blue-500 disabled:opacity-30"><i className="fa-solid fa-arrow-down"></i></button>
+                                        <button onClick={() => deleteQuestion(q.id)} className="p-2 text-red-500 hover:bg-red-50 rounded"><i className="fa-solid fa-xmark"></i></button>
+                                    </div>
+                                    
+                                    <div className="flex items-start gap-4">
+                                        <div className="bg-purple-100 text-purple-800 font-black w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-2 border-purple-300">
+                                            {index + 1}
+                                        </div>
+                                        <div className="flex-1 w-full">
+                                            <textarea 
+                                                value={q.text} 
+                                                onChange={(e) => updateQuestion(q.id, 'text', e.target.value)}
+                                                placeholder="Nhập nội dung câu hỏi tại đây..."
+                                                className="w-full p-3 text-lg border border-gray-300 rounded-lg focus:outline-none focus:border-purple-500 mb-4 resize-none h-24"
+                                            />
+
+                                            {q.type === 'multiple' ? (
+                                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                                    {q.options.map((opt, oIndex) => (
+                                                        <div key={oIndex} className={`flex items-center p-2 rounded-lg border-2 ${q.correctAnswer === oIndex.toString() ? 'border-green-500 bg-green-50' : 'border-gray-200'}`}>
+                                                            <input 
+                                                                type="radio" 
+                                                                name={`correct-${q.id}`} 
+                                                                checked={q.correctAnswer === oIndex.toString()}
+                                                                onChange={() => updateQuestion(q.id, 'correctAnswer', oIndex.toString())}
+                                                                className="w-5 h-5 mr-3 text-green-600 cursor-pointer"
+                                                            />
+                                                            <input 
+                                                                type="text" 
+                                                                value={opt}
+                                                                onChange={(e) => updateQuestion(q.id, 'options', e.target.value, oIndex)}
+                                                                placeholder={`Phương án ${String.fromCharCode(65 + oIndex)}`}
+                                                                className="flex-1 p-2 border-b border-transparent focus:border-gray-300 bg-transparent outline-none"
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <div className="bg-blue-50 p-4 rounded-lg border-2 border-blue-200">
+                                                    <label className="block text-blue-800 font-bold mb-2">Đáp án đúng (chính xác từng chữ/số):</label>
+                                                    <input 
+                                                        type="text" 
+                                                        value={q.correctAnswer}
+                                                        onChange={(e) => updateQuestion(q.id, 'correctAnswer', e.target.value)}
+                                                        placeholder="Nhập đáp án ngắn..."
+                                                        className="w-full p-3 border border-blue-300 rounded-lg outline-none focus:border-blue-500 font-bold"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    <div className="mt-8 text-center border-t pt-6">
+                        <button onClick={startGame} className="px-10 py-4 bg-green-500 text-white font-bold rounded-xl text-2xl btn-3d" style={{'--shadow-color': '#166534'}}>
+                            <i className="fa-solid fa-play mr-2"></i> Sẵn Sàng Bắt Đầu
+                        </button>
+                    </div>
+                </div>
+            );
+
+            // --- THE ARENA ---
+            const renderArena = () => {
+                const isTugging = !gameState.isPaused && !gameState.feedback && !gameState.winner;
+                
+                // Giới hạn hiển thị rope
+                let displayRopePos = gameState.ropePos;
+                if(displayRopePos < -100) displayRopePos = -100;
+                if(displayRopePos > 100) displayRopePos = 100;
+
+                return (
+                    <div className="w-full h-64 md:h-80 relative overflow-hidden rounded-2xl border-4 border-white shadow-xl mt-4" style={{
+                        background: 'linear-gradient(to bottom, #87CEEB 0%, #87CEEB 50%, #4ade80 50%, #22c55e 100%)'
+                    }}>
+                        {/* Background Elements */}
+                        <div className="absolute top-10 left-10 text-white opacity-80"><i className="fa-solid fa-cloud text-5xl"></i></div>
+                        <div className="absolute top-5 right-20 text-white opacity-80"><i className="fa-solid fa-cloud text-4xl"></i></div>
+                        <div className="absolute top-0 right-0 text-yellow-300 text-6xl m-4 anim-bounce"><i className="fa-solid fa-sun"></i></div>
+
+                        {/* Lines */}
+                        <div className="absolute top-1/2 bottom-0 left-1/2 w-2 bg-white -translate-x-1/2 z-10 border-x border-gray-200"></div> {/* Center */}
+                        <div className="absolute top-1/2 bottom-0 left-[10%] w-2 bg-red-500 -translate-x-1/2 z-10 border-x border-red-700 opacity-80"></div> {/* T1 Win */}
+                        <div className="absolute top-1/2 bottom-0 right-[10%] w-2 bg-blue-500 translate-x-1/2 z-10 border-x border-blue-700 opacity-80"></div> {/* T2 Win */}
+
+                        {/* Text Indicators */}
+                        <div className="absolute bottom-2 left-[10%] text-red-700 font-bold bg-white/70 px-2 rounded -translate-x-1/2 text-xs md:text-sm">VẠCH ĐÍCH {settings.team1Name.substring(0,5)}</div>
+                        <div className="absolute bottom-2 right-[10%] text-blue-700 font-bold bg-white/70 px-2 rounded translate-x-1/2 text-xs md:text-sm">VẠCH ĐÍCH {settings.team2Name.substring(0,5)}</div>
+
+                        {/* Rope Container (moves) */}
+                        {/* Rope container's origin is center. TranslateX moves it based on percentage of half-width. 
+                            100 score = 40% of container width movement (from center 50% to edge 10% or 90%)
+                        */}
+                        <div 
+                            className="absolute top-[60%] left-1/2 w-full h-20 -translate-x-1/2 -translate-y-1/2 transition-all duration-700 ease-in-out z-20 flex items-center justify-center"
+                            style={{ transform: `translate(calc(-50% + ${displayRopePos * 0.4}%), -50%)` }}
+                        >
+                            {/* The Rope itself */}
+                            <div className={`w-[200%] h-3 md:h-5 rounded-full rope-pattern shadow-md border border-yellow-900 ${isTugging ? 'anim-tug' : ''}`}></div>
+                            
+                            {/* Center Knot (Cờ) */}
+                            <div className="absolute left-1/2 -translate-x-1/2 w-6 h-10 bg-red-600 rounded shadow-md z-30"></div>
+
+                            {/* Team 1 Characters (Left side of rope) */}
+                            <div className="absolute left-[20%] -translate-y-6 flex space-x-2 md:space-x-6 z-30">
+                                {[1,2,3].map(i => (
+                                    <div key={`t1-${i}`} className={`flex flex-col items-center ${isTugging ? 'anim-bounce' : ''}`} style={{animationDelay: `${i*0.1}s`}}>
+                                        <div className="w-10 h-10 md:w-14 md:h-14 bg-red-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center">
+                                            <i className="fa-solid fa-face-smile text-white text-xl md:text-2xl"></i>
+                                        </div>
+                                        <div className="w-6 md:w-8 h-8 md:h-12 bg-red-600 mt-1 rounded shadow-lg"></div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Team 2 Characters (Right side of rope) */}
+                            <div className="absolute right-[20%] -translate-y-6 flex space-x-2 md:space-x-6 z-30">
+                                {[1,2,3].map(i => (
+                                    <div key={`t2-${i}`} className={`flex flex-col items-center ${isTugging ? 'anim-bounce' : ''}`} style={{animationDelay: `${i*0.1}s`}}>
+                                        <div className="w-10 h-10 md:w-14 md:h-14 bg-blue-500 rounded-full border-4 border-white shadow-lg flex items-center justify-center">
+                                            <i className="fa-solid fa-face-laugh-squint text-white text-xl md:text-2xl"></i>
+                                        </div>
+                                        <div className="w-6 md:w-8 h-8 md:h-12 bg-blue-600 mt-1 rounded shadow-lg"></div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        {/* Effects Layer */}
+                        {gameState.feedback === 'correct' && (
+                            <div className="absolute inset-0 z-40 flex items-center justify-center bg-white/20">
+                                <h2 className="text-5xl md:text-7xl font-black text-yellow-400 drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] anim-pop border-4 border-transparent" style={{WebkitTextStroke: '2px #b45309'}}>CHÍNH XÁC!</h2>
+                                <Fireworks />
+                            </div>
+                        )}
+                        {gameState.feedback === 'wrong' && (
+                            <div className="absolute inset-0 z-40 flex items-center justify-center bg-gray-900/30">
+                                <h2 className="text-4xl md:text-6xl font-black text-white drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)] anim-shake border-4 border-transparent" style={{WebkitTextStroke: '2px #000'}}>CỐ LÊN NHÉ!</h2>
+                            </div>
+                        )}
+                    </div>
+                );
+            };
+
+            const renderPlaying = () => {
+                const currentQ = questions[gameState.currentQIndex];
+                
+                // Progress calculation
+                const t1Progress = Math.max(0, Math.min(100, (gameState.ropePos * -1 + 100) / 2));
+                const t2Progress = Math.max(0, Math.min(100, (gameState.ropePos + 100) / 2));
+
+                return (
+                    <div className="h-screen w-full flex flex-col bg-[#f0f9ff]">
+                        {/* Header Panel */}
+                        <div className="bg-white shadow-md p-2 flex justify-between items-center z-10 shrink-0">
+                            <h1 className="text-xl md:text-2xl font-black text-gray-800 uppercase ml-4">{settings.gameName}</h1>
+                            <div className="flex space-x-2 mr-2">
+                                <button onClick={() => setSoundEnabled(!soundEnabled)} className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-700 hover:bg-gray-300">
+                                    <i className={`fa-solid ${soundEnabled ? 'fa-volume-high' : 'fa-volume-xmark'}`}></i>
+                                </button>
+                                <button onClick={() => setGameState(p => ({...p, isPaused: !p.isPaused}))} className="w-10 h-10 bg-yellow-100 text-yellow-700 rounded-full flex items-center justify-center hover:bg-yellow-200">
+                                    <i className={`fa-solid ${gameState.isPaused ? 'fa-play' : 'fa-pause'}`}></i>
+                                </button>
+                                <button onClick={toggleFullScreen} className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center text-gray-700 hover:bg-gray-300 hidden md:flex">
+                                    <i className="fa-solid fa-expand"></i>
+                                </button>
+                                <button onClick={() => { if(window.confirm("Thoát trò chơi?")) setPhase('setup') }} className="px-4 py-2 bg-red-100 text-red-700 font-bold rounded-lg hover:bg-red-200">
+                                    Thoát
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Top Info Bar: Scores & Progress */}
+                        <div className="flex justify-between items-center p-4 shrink-0 bg-white/50 backdrop-blur">
+                            {/* Team 1 Stats */}
+                            <div className={`flex flex-col items-start w-1/3 p-2 rounded-xl transition-all ${gameState.currentTurn === 1 ? 'bg-red-100 border-2 border-red-400 shadow-md transform scale-105' : 'opacity-70'}`}>
+                                <div className="text-red-700 font-black text-lg md:text-2xl flex items-center">
+                                    <i className="fa-solid fa-shield-halved mr-2"></i> {settings.team1Name}
+                                </div>
+                                <div className="text-red-900 font-bold text-sm">Điểm: {gameState.team1Score}</div>
+                                <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2">
+                                    <div className="bg-red-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${t1Progress}%` }}></div>
+                                </div>
+                            </div>
+
+                            {/* Center Status / Timer */}
+                            <div className="flex flex-col items-center justify-center w-1/3">
+                                {settings.isTimed && (
+                                    <div className={`text-4xl md:text-5xl font-black ${gameState.timeLeft <= 10 ? 'text-red-600 anim-pop' : 'text-gray-800'}`}>
+                                        <i className="fa-regular fa-clock mr-2"></i>{gameState.timeLeft}s
+                                    </div>
+                                )}
+                                <div className="text-sm font-bold text-gray-500 uppercase tracking-widest mt-2">
+                                    Câu {gameState.currentQIndex + 1} / {questions.length}
+                                </div>
+                            </div>
+
+                            {/* Team 2 Stats */}
+                            <div className={`flex flex-col items-end w-1/3 p-2 rounded-xl transition-all ${gameState.currentTurn === 2 ? 'bg-blue-100 border-2 border-blue-400 shadow-md transform scale-105' : 'opacity-70'}`}>
+                                <div className="text-blue-700 font-black text-lg md:text-2xl flex items-center">
+                                    {settings.team2Name} <i className="fa-solid fa-shield-halved ml-2"></i>
+                                </div>
+                                <div className="text-blue-900 font-bold text-sm">Điểm: {gameState.team2Score}</div>
+                                <div className="w-full bg-gray-200 rounded-full h-2.5 mt-2 flex justify-end">
+                                    <div className="bg-blue-500 h-2.5 rounded-full transition-all duration-500" style={{ width: `${t2Progress}%` }}></div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Arena */}
+                        <div className="px-4 shrink-0">
+                            {renderArena()}
+                        </div>
+
+                        {/* Question Area */}
+                        <div className="flex-1 flex flex-col items-center justify-center p-4 relative">
+                            {gameState.isPaused ? (
+                                <div className="text-4xl font-black text-gray-500 uppercase tracking-widest">ĐÃ TẠM DỪNG</div>
+                            ) : (
+                                <div className="w-full max-w-5xl bg-white p-6 md:p-10 rounded-3xl shadow-[0_10px_40px_rgba(0,0,0,0.1)] border-4 border-gray-100 flex flex-col h-full justify-center anim-pop">
+                                    
+                                    {/* Select Team to answer if manual mode */}
+                                    {settings.turnMode === 'manual' && !gameState.feedback && (
+                                        <div className="flex justify-center space-x-4 mb-6">
+                                            <span className="font-bold text-gray-500 self-center">Chọn đội trả lời:</span>
+                                            <button onClick={() => setGameState(p => ({...p, currentTurn: 1}))} className={`px-4 py-2 rounded-lg font-bold border-2 ${gameState.currentTurn===1 ? 'bg-red-500 text-white border-red-600' : 'bg-white text-red-500 border-red-300'}`}>
+                                                {settings.team1Name}
+                                            </button>
+                                            <button onClick={() => setGameState(p => ({...p, currentTurn: 2}))} className={`px-4 py-2 rounded-lg font-bold border-2 ${gameState.currentTurn===2 ? 'bg-blue-500 text-white border-blue-600' : 'bg-white text-blue-500 border-blue-300'}`}>
+                                                {settings.team2Name}
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {/* Question Text */}
+                                    <h2 className="text-2xl md:text-4xl font-bold text-center text-gray-800 mb-8 leading-tight">
+                                        {currentQ.text}
+                                    </h2>
+
+                                    {/* Answers */}
+                                    {currentQ.type === 'multiple' ? (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6 mt-auto">
+                                            {currentQ.options.map((opt, idx) => {
+                                                if(!opt) return null; // Skip empty options
+                                                
+                                                // Style based on feedback state
+                                                let btnClass = "bg-white text-gray-700 border-2 border-gray-300 hover:border-gray-500 hover:bg-gray-50";
+                                                if (gameState.feedback) {
+                                                    if (idx.toString() === currentQ.correctAnswer) {
+                                                        btnClass = "bg-green-500 text-white border-green-600 anim-pop shadow-[0_0_15px_rgba(34,197,94,0.7)]"; // Always highlight correct
+                                                    } else {
+                                                        btnClass = "bg-gray-100 text-gray-400 border-gray-200 opacity-50"; // Dim others
+                                                    }
+                                                }
+
+                                                return (
+                                                    <button 
+                                                        key={idx}
+                                                        disabled={gameState.feedback !== null}
+                                                        onClick={() => handleAnswer(idx)}
+                                                        className={`p-4 md:p-6 rounded-2xl text-xl md:text-2xl font-bold transition-all transform active:scale-95 text-left flex items-center ${btnClass}`}
+                                                    >
+                                                        <span className="w-10 h-10 rounded-full flex items-center justify-center bg-black/10 mr-4 shrink-0 font-black">
+                                                            {String.fromCharCode(65 + idx)}
+                                                        </span>
+                                                        {opt}
+                                                    </button>
+                                                )
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="w-full max-w-2xl mx-auto flex flex-col items-center mt-auto">
+                                            {gameState.feedback ? (
+                                                <div className="text-center">
+                                                    <div className="text-lg text-gray-500 mb-2">Đáp án chính xác:</div>
+                                                    <div className="text-3xl font-black text-green-600 bg-green-100 px-8 py-4 rounded-xl border-2 border-green-300 anim-pop">
+                                                        {currentQ.correctAnswer}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <form onSubmit={(e) => {
+                                                    e.preventDefault();
+                                                    handleAnswer(e.target.shortAnswer.value);
+                                                }} className="w-full">
+                                                    <input 
+                                                        type="text" 
+                                                        name="shortAnswer"
+                                                        placeholder="Đội nhập câu trả lời vào đây..." 
+                                                        className="w-full p-6 text-2xl border-4 border-gray-300 rounded-2xl focus:outline-none focus:border-blue-500 text-center font-bold"
+                                                        autoComplete="off"
+                                                    />
+                                                    <button type="submit" className="w-full mt-4 p-4 bg-blue-600 text-white text-2xl font-bold rounded-xl hover:bg-blue-700 btn-3d" style={{'--shadow-color': '#1d4ed8'}}>
+                                                        Chốt Đáp Án
+                                                    </button>
+                                                </form>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                );
+            };
+
+            const renderEndScreen = () => {
+                let winnerName = gameState.winner === 1 ? settings.team1Name : (gameState.winner === 2 ? settings.team2Name : 'HÒA NHAU');
+                let winnerColor = gameState.winner === 1 ? 'text-red-500' : (gameState.winner === 2 ? 'text-blue-500' : 'text-purple-500');
+                let winnerBg = gameState.winner === 1 ? 'bg-red-50' : (gameState.winner === 2 ? 'bg-blue-50' : 'bg-purple-50');
+
+                return (
+                    <div className={`min-h-screen flex flex-col items-center justify-center p-6 ${winnerBg} relative overflow-hidden`}>
+                        <Fireworks />
+                        <Fireworks />
+                        
+                        <div className="glass-panel p-10 md:p-16 rounded-3xl text-center z-10 max-w-4xl w-full shadow-2xl anim-pop">
+                            <i className="fa-solid fa-trophy text-7xl md:text-9xl text-yellow-400 drop-shadow-lg mb-6 anim-bounce"></i>
+                            
+                            <h2 className="text-3xl md:text-5xl font-bold text-gray-700 mb-2 uppercase">Chiến Thắng Thuộc Về</h2>
+                            <h1 className={`text-6xl md:text-8xl font-black ${winnerColor} mb-10 drop-shadow-md uppercase tracking-wide border-b-4 pb-6`}>
+                                {winnerName}
+                            </h1>
+
+                            <div className="grid grid-cols-2 gap-8 mb-12">
+                                <div className="bg-white p-6 rounded-2xl shadow border-2 border-red-200">
+                                    <h3 className="text-xl font-bold text-gray-500 mb-2">{settings.team1Name}</h3>
+                                    <p className="text-4xl font-black text-red-600">{gameState.team1Score} <span className="text-lg text-gray-400">câu đúng</span></p>
+                                </div>
+                                <div className="bg-white p-6 rounded-2xl shadow border-2 border-blue-200">
+                                    <h3 className="text-xl font-bold text-gray-500 mb-2">{settings.team2Name}</h3>
+                                    <p className="text-4xl font-black text-blue-600">{gameState.team2Score} <span className="text-lg text-gray-400">câu đúng</span></p>
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col md:flex-row justify-center space-y-4 md:space-y-0 md:space-x-6">
+                                <button onClick={startGame} className="px-8 py-4 bg-green-500 text-white font-bold rounded-xl text-xl btn-3d hover:bg-green-400" style={{'--shadow-color': '#166534'}}>
+                                    <i className="fa-solid fa-rotate-right mr-2"></i> Chơi Lại (Giữ Câu Hỏi)
+                                </button>
+                                <button onClick={() => setPhase('setup')} className="px-8 py-4 bg-blue-500 text-white font-bold rounded-xl text-xl btn-3d hover:bg-blue-400" style={{'--shadow-color': '#1e3a8a'}}>
+                                    <i className="fa-solid fa-gear mr-2"></i> Quay Về Thiết Lập
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            // --- MAIN RENDER ---
+            return (
+                <div className="min-h-screen relative">
+                    {/* Background Pattern */}
+                    <div className="absolute inset-0 pointer-events-none opacity-5" style={{
+                        backgroundImage: 'radial-gradient(#444cf7 2px, transparent 2px), radial-gradient(#444cf7 2px, #e5e5f7 2px)',
+                        backgroundSize: '40px 40px',
+                        backgroundPosition: '0 0, 20px 20px'
+                    }}></div>
+
+                    {phase === 'setup' && renderSetup()}
+                    {phase === 'create_questions' && renderQuestionManager()}
+                    {phase === 'playing' && renderPlaying()}
+                    {phase === 'end' && renderEndScreen()}
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>

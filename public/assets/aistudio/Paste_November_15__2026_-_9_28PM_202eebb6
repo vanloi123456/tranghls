@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Thử Tài Kéo Thả – Nối Ý</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js"></script>
+    <style>
+        :root {
+            --primary: #4F46E5;
+            --secondary: #10B981;
+            --warning: #F59E0B;
+            --danger: #EF4444;
+            --info: #3B82F6;
+        }
+        body {
+            font-family: 'Nunito', sans-serif;
+            background-color: #F0F9FF;
+            background-image: radial-gradient(#E0F2FE 2px, transparent 2px);
+            background-size: 30px 30px;
+            overscroll-behavior-y: none;
+        }
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar { width: 8px; height: 8px; }
+        ::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb { background: #c7d2fe; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #818cf8; }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.05);
+        }
+        
+        .btn-kid {
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            position: relative;
+            top: 0;
+            box-shadow: 0 4px 0px rgba(0,0,0,0.15);
+        }
+        .btn-kid:active {
+            top: 4px;
+            box-shadow: 0 0px 0px rgba(0,0,0,0.15);
+        }
+
+        /* SVG Matching Lines Canvas */
+        #svg-canvas {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 10;
+        }
+        .match-node {
+            touch-action: none; /* Prevent scrolling when dragging */
+            cursor: pointer;
+        }
+
+        /* Image Drop Editor styles */
+        #image-preview-container {
+            position: relative;
+            display: inline-block;
+            max-width: 100%;
+        }
+        #image-preview {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            border-radius: 0.5rem;
+        }
+        .drop-zone-edit {
+            position: absolute;
+            border: 3px dashed #3B82F6;
+            background: rgba(59, 130, 246, 0.2);
+            cursor: move;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #1D4ED8;
+            font-weight: bold;
+            text-align: center;
+            overflow: hidden;
+            border-radius: 8px;
+        }
+        .resize-handle {
+            position: absolute;
+            width: 15px; height: 15px;
+            background: #fff;
+            border: 2px solid #3B82F6;
+            border-radius: 50%;
+            right: -7px; bottom: -7px;
+            cursor: nwse-resize;
+        }
+        .delete-zone-btn {
+            position: absolute;
+            top: -12px; right: -12px;
+            background: #EF4444; color: white;
+            border-radius: 50%; width: 24px; height: 24px;
+            display: flex; justify-content: center; align-items: center;
+            cursor: pointer; font-size: 12px; z-index: 20;
+        }
+
+        /* Draggable elements */
+        .draggable-item {
+            touch-action: none;
+            cursor: grab;
+            user-select: none;
+            z-index: 50;
+        }
+        .draggable-item:active { cursor: grabbing; }
+        .draggable-item.dragging {
+            opacity: 0.8;
+            transform: scale(1.05);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+        }
+
+        /* Drop Zones for Play Mode */
+        .drop-zone-play {
+            position: absolute;
+            border: 3px dashed rgba(255,255,255,0.7);
+            background: rgba(255,255,255,0.3);
+            border-radius: 8px;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .drop-zone-play.drag-over {
+            background: rgba(251, 191, 36, 0.5); /* Yellow tint */
+            border-color: #F59E0B;
+            transform: scale(1.02);
+        }
+        
+        .correct-anim { animation: popCorrect 0.5s ease; }
+        .wrong-anim { animation: shakeWrong 0.5s ease; }
+
+        @keyframes popCorrect {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); background-color: #D1FAE5; border-color: #10B981;}
+            100% { transform: scale(1); }
+        }
+        @keyframes shakeWrong {
+            0%, 100% { transform: translateX(0); }
+            20%, 60% { transform: translateX(-5px); background-color: #FEE2E2; border-color: #EF4444;}
+            40%, 80% { transform: translateX(5px); }
+        }
+
+        /* Confetti Canvas */
+        #confetti-canvas {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 9999;
+        }
+    </style>
+</head>
+<body class="text-gray-700 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b-4 border-indigo-500 py-3 px-4 flex justify-between items-center sticky top-0 z-40 relative">
+        <div class="flex items-center gap-3">
+            <div class="bg-indigo-100 text-indigo-600 p-2 rounded-xl">
+                <i class="fa-solid fa-puzzle-piece text-2xl"></i>
+            </div>
+            <h1 class="text-xl md:text-2xl font-extrabold text-indigo-800 uppercase tracking-wide">Thử Tài Kéo Thả – Nối Ý</h1>
+        </div>
+        <div class="flex gap-2" id="header-actions">
+            <!-- Header buttons injected dynamically -->
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-grow p-4 md:p-6 w-full max-w-7xl mx-auto flex flex-col relative" id="main-container">
+        
+        <!-- ==================== HOME SCREEN ==================== -->
+        <div id="screen-home" class="flex-grow flex flex-col items-center justify-center text-center">
+            <img src="https://placehold.co/200x200/E0F2FE/4F46E5?text=%F0%9F%8E%A8" alt="Logo" class="w-32 h-32 rounded-full shadow-lg border-4 border-white mb-6 object-cover hidden">
+            <div class="w-32 h-32 bg-indigo-100 rounded-full flex items-center justify-center mb-6 shadow-inner border-4 border-white">
+                <i class="fa-solid fa-shapes text-6xl text-indigo-500"></i>
+            </div>
+            <h2 class="text-3xl md:text-4xl font-extrabold text-gray-800 mb-4">Chào mừng Thầy/Cô!</h2>
+            <p class="text-lg text-gray-600 mb-8 max-w-xl">Hãy bắt đầu tạo những trò chơi học tập tương tác thú vị cho các em học sinh. Tất cả đều trống và sẵn sàng chờ sự sáng tạo của Thầy/Cô!</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl">
+                <button onclick="createNewGame('matching')" class="btn-kid bg-blue-500 text-white p-6 rounded-3xl flex flex-col items-center gap-3 hover:bg-blue-600">
+                    <i class="fa-solid fa-link text-4xl"></i>
+                    <span class="text-xl font-bold">1. Kéo thả Nối Ý</span>
+                    <span class="text-sm font-normal opacity-90">Ghép các cặp ý tương ứng</span>
+                </button>
+                <button onclick="createNewGame('imagemap')" class="btn-kid bg-emerald-500 text-white p-6 rounded-3xl flex flex-col items-center gap-3 hover:bg-emerald-600">
+                    <i class="fa-regular fa-image text-4xl"></i>
+                    <span class="text-xl font-bold">2. Thả vào Hình</span>
+                    <span class="text-sm font-normal opacity-90">Kéo đáp án vào vị trí trên ảnh</span>
+                </button>
+                <button onclick="createNewGame('categorize')" class="btn-kid bg-amber-500 text-white p-6 rounded-3xl flex flex-col items-center gap-3 hover:bg-amber-600">
+                    <i class="fa-solid fa-boxes-stacked text-4xl"></i>
+                    <span class="text-xl font-bold">3. Phân Loại</span>
+                    <span class="text-sm font-normal opacity-90">Kéo thẻ vào đúng nhóm</span>
+                </button>
+            </div>
+
+            <!-- Khu vực danh sách trò chơi đã lưu -->
+            <div id="saved-games-section" class="w-full max-w-4xl mt-12 hidden">
+                <h3 class="text-xl font-bold text-gray-700 mb-4 text-left border-b-2 border-indigo-200 pb-2"><i class="fa-solid fa-folder-closed mr-2"></i>Trò chơi đã lưu trên thiết bị này</h3>
+                <div id="saved-games-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 text-left">
+                    <!-- Danh sách được render bằng JS -->
+                </div>
+            </div>
+
+            <div class="mt-8 flex gap-4">
+                <label class="btn-kid bg-gray-100 text-gray-700 px-6 py-3 rounded-2xl cursor-pointer hover:bg-gray-200 font-bold border-2 border-gray-300">
+                    <i class="fa-solid fa-file-import mr-2"></i> Mở từ file (.json)
+                    <input type="file" id="file-import" accept=".json" class="hidden" onchange="importGame(event)">
+                </label>
+            </div>
+        </div>
+
+        <!-- ==================== TEACHER EDITOR SCREEN ==================== -->
+        <div id="screen-editor" class="hidden flex-grow flex flex-col w-full">
+            <div class="bg-white rounded-3xl shadow-md border border-gray-100 p-4 md:p-6 mb-6">
+                <h3 class="text-lg font-bold text-gray-800 mb-4 border-b pb-2">Thông tin chung (Giáo viên tự điền)</h3>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-bold text-gray-600 mb-1">Tên trò chơi:</label>
+                        <input type="text" id="edit-title" class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2 focus:border-indigo-500 focus:outline-none focus:bg-white transition" placeholder="VD: Tìm bạn cho chữ...">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-bold text-gray-600 mb-1">Tên bài học/Chủ đề:</label>
+                        <input type="text" id="edit-subject" class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2 focus:border-indigo-500 focus:outline-none focus:bg-white transition" placeholder="VD: Tiếng Việt Lớp 2...">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-sm font-bold text-gray-600 mb-1">Hướng dẫn cho học sinh:</label>
+                        <textarea id="edit-instructions" rows="2" class="w-full bg-gray-50 border-2 border-gray-200 rounded-xl px-4 py-2 focus:border-indigo-500 focus:outline-none focus:bg-white transition" placeholder="VD: Các em hãy kéo ý ở cột trái nối với ý tương ứng ở cột phải nhé!"></textarea>
+                    </div>
+                </div>
+            </div>
+
+            <div id="editor-workspace" class="glass-panel rounded-3xl p-4 md:p-6 flex-grow flex flex-col">
+                <!-- Dynamic Editor Content Injected Here -->
+            </div>
+        </div>
+
+        <!-- ==================== STUDENT PLAY SCREEN ==================== -->
+        <div id="screen-play" class="hidden flex-grow flex flex-col w-full max-w-5xl mx-auto">
+            <div class="bg-white rounded-3xl shadow-lg border-b-4 border-indigo-300 p-6 mb-4 text-center">
+                <h2 id="play-title" class="text-3xl font-extrabold text-indigo-700 mb-2"></h2>
+                <h4 id="play-subject" class="text-lg font-bold text-gray-500 mb-3"></h4>
+                <div class="inline-block bg-yellow-100 text-yellow-800 px-6 py-2 rounded-2xl text-lg border-2 border-yellow-300 shadow-sm">
+                    <i class="fa-solid fa-circle-info mr-2"></i>
+                    <span id="play-instructions"></span>
+                </div>
+            </div>
+            
+            <div id="play-workspace" class="flex-grow relative rounded-3xl p-2 md:p-4 bg-white/50 border-2 border-dashed border-indigo-200">
+                <!-- Dynamic Play Content Injected Here -->
+            </div>
+
+            <div id="play-controls" class="mt-6 flex justify-center gap-4 hidden">
+                <button onclick="checkResult()" class="btn-kid bg-indigo-500 text-white px-8 py-3 rounded-2xl text-xl font-bold hover:bg-indigo-600">
+                    <i class="fa-solid fa-check-double mr-2"></i> Kiểm tra kết quả
+                </button>
+                <button onclick="resetPlay()" class="btn-kid bg-orange-400 text-white px-8 py-3 rounded-2xl text-xl font-bold hover:bg-orange-500">
+                    <i class="fa-solid fa-rotate-left mr-2"></i> Làm lại
+                </button>
+            </div>
+        </div>
+        
+    </main>
+
+    <!-- Modals & Overlays -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
+        <div class="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl border-4 border-amber-400">
+            <div class="text-5xl mb-4 text-amber-500"><i class="fa-solid fa-triangle-exclamation"></i></div>
+            <h2 class="text-2xl font-bold mb-2 text-gray-800" id="confirm-title">Cảnh báo</h2>
+            <p class="text-gray-600 mb-6" id="confirm-message">Bạn có chắc chắn muốn quay lại Trang chủ? Nội dung chưa lưu sẽ bị mất!</p>
+            <div class="flex justify-center gap-3">
+                <button onclick="closeConfirmModal()" class="btn-kid bg-gray-200 text-gray-700 px-4 py-2 rounded-xl font-bold hover:bg-gray-300">Hủy bỏ</button>
+                <button onclick="executeConfirmAction()" class="btn-kid bg-red-500 text-white px-4 py-2 rounded-xl font-bold hover:bg-red-600">Đồng ý</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="result-modal" class="fixed inset-0 bg-black/60 z-50 hidden flex items-center justify-center backdrop-blur-sm p-4">
+        <div class="bg-white rounded-3xl p-8 max-w-md w-full text-center shadow-2xl border-4 border-indigo-400 transform scale-95 transition-transform duration-300" id="result-modal-content">
+            <div id="result-icon" class="text-7xl mb-4"></div>
+            <h2 id="result-title" class="text-3xl font-bold mb-2"></h2>
+            <p id="result-score" class="text-2xl text-gray-600 mb-6 font-bold"></p>
+            <div class="flex flex-col gap-3">
+                <button onclick="closeResultModal(); resetPlay();" class="btn-kid bg-blue-500 text-white py-3 rounded-xl font-bold text-lg">Chơi lại</button>
+                <button onclick="closeResultModal();" class="btn-kid bg-gray-200 text-gray-700 py-3 rounded-xl font-bold text-lg">Xem chi tiết bài làm</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Canvas for Confetti -->
+    <canvas id="confetti-canvas"></canvas>
+
+<script>
+/**
+ * -----------------------------------------------------------------------------
+ * CORE STATE MANAGEMENT (TRẠNG THÁI TRÒ CHƠI)
+ * Yêu cầu: Khởi tạo hoàn toàn TRỐNG. Không có dữ liệu mẫu.
+ * -----------------------------------------------------------------------------
+ */
+let gameState = {
+    id: "",
+    title: "",
+    subject: "",
+    instructions: "",
+    type: "", // 'matching', 'imagemap', 'categorize'
+    content: null 
+    // content format based on type:
+    // matching: { pairs: [ {id, left: "", right: ""} ] }
+    // imagemap: { imageBase64: "", zones: [ {id, x, y, w, h, text: ""} ] }
+    // categorize: { categories: [ {id, name: ""} ], items: [ {id, text: "", catId: ""} ] }
+};
+
+// Biến lưu trữ trạng thái khi chơi (để tách biệt với dữ liệu thiết kế)
+let playState = {};
+
+/**
+ * -----------------------------------------------------------------------------
+ * UTILITIES (CÔNG CỤ)
+ * -----------------------------------------------------------------------------
+ */
+const generateId = () => 'id_' + Math.random().toString(36).substr(2, 9);
+const $ = id => document.getElementById(id);
+
+// Shuffle array
+function shuffle(array) {
+    let currentIndex = array.length, randomIndex;
+    while (currentIndex != 0) {
+        randomIndex = Math.floor(Math.random() * currentIndex);
+        currentIndex--;
+        [array[currentIndex], array[randomIndex]] = [array[randomIndex], array[currentIndex]];
+    }
+    return array;
+}
+
+// Xử lý thông báo (toast)
+function showToast(message, type = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `fixed bottom-6 right-6 px-6 py-3 rounded-2xl text-white font-bold shadow-lg z-50 transform transition-all duration-300 translate-y-10 opacity-0`;
+    toast.style.backgroundColor = type === 'error' ? '#EF4444' : '#10B981';
+    toast.innerHTML = `<i class="fa-solid ${type === 'error' ? 'fa-triangle-exclamation' : 'fa-circle-check'} mr-2"></i> ${message}`;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => { toast.classList.remove('translate-y-10', 'opacity-0'); }, 10);
+    setTimeout(() => { 
+        toast.classList.add('translate-y-10', 'opacity-0'); 
+        setTimeout(() => toast.remove(), 300);
+    }, 3000);
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * NAVIGATION & UI (ĐIỀU HƯỚNG MÀN HÌNH)
+ * -----------------------------------------------------------------------------
+ */
+function switchScreen(screen) {
+    $('screen-home').classList.add('hidden');
+    $('screen-editor').classList.add('hidden');
+    $('screen-play').classList.add('hidden');
+    
+    $(screen).classList.remove('hidden');
+    updateHeaderActions(screen);
+
+    if (screen === 'screen-home') {
+        renderLocalGames();
+    }
+}
+
+function updateHeaderActions(screen) {
+    const actions = $('header-actions');
+    actions.innerHTML = ''; // Clear
+
+    if (screen === 'screen-editor') {
+        actions.innerHTML = `
+            <button onclick="confirmGoHome()" class="btn-kid bg-gray-200 text-gray-700 px-3 py-2 rounded-xl text-sm font-bold md:px-4 hidden md:block">
+                <i class="fa-solid fa-house"></i> Trang chủ
+            </button>
+            <button onclick="saveToLocal()" class="btn-kid bg-blue-500 text-white px-3 py-2 rounded-xl text-sm font-bold md:px-4">
+                <i class="fa-solid fa-floppy-disk"></i> Lưu
+            </button>
+            <button onclick="exportGame()" class="btn-kid bg-emerald-500 text-white px-3 py-2 rounded-xl text-sm font-bold md:px-4 hidden sm:block" title="Tải xuống file JSON">
+                <i class="fa-solid fa-download"></i> Xuất file
+            </button>
+            <button onclick="preparePlay()" class="btn-kid bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-bold md:px-6">
+                <i class="fa-solid fa-play"></i> Bắt đầu chơi
+            </button>
+        `;
+    } else if (screen === 'screen-play') {
+        actions.innerHTML = `
+            <button onclick="switchScreen('screen-editor')" class="btn-kid bg-amber-500 text-white px-4 py-2 rounded-xl text-sm font-bold md:px-6">
+                <i class="fa-solid fa-pen"></i> Chỉnh sửa (Giáo viên)
+            </button>
+        `;
+    }
+}
+
+let confirmActionCallback = null;
+
+function showConfirmModal(title, message, callback) {
+    $('confirm-title').innerText = title;
+    $('confirm-message').innerText = message;
+    confirmActionCallback = callback;
+    $('confirm-modal').classList.remove('hidden');
+}
+
+function closeConfirmModal() {
+    $('confirm-modal').classList.add('hidden');
+    confirmActionCallback = null;
+}
+
+function executeConfirmAction() {
+    if (confirmActionCallback) confirmActionCallback();
+    closeConfirmModal();
+}
+
+function confirmGoHome() {
+    showConfirmModal("Cảnh báo", "Bạn có chắc chắn muốn quay lại Trang chủ? Nội dung chưa lưu sẽ bị mất!", () => {
+        gameState = { id: "", title: "", subject: "", instructions: "", type: "", content: null };
+        switchScreen('screen-home');
+    });
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * LOCAL STORAGE MANAGEMENT (QUẢN LÝ DỮ LIỆU CỤC BỘ)
+ * -----------------------------------------------------------------------------
+ */
+const LOCAL_STORAGE_KEY = 'keotha_saved_games';
+
+function getSavedGames() {
+    const saved = localStorage.getItem(LOCAL_STORAGE_KEY);
+    return saved ? JSON.parse(saved) : [];
+}
+
+function saveToLocal() {
+    saveFormToState();
+    if (!gameState.id) gameState.id = generateId();
+    
+    let games = getSavedGames();
+    const index = games.findIndex(g => g.id === gameState.id);
+    
+    const gameToSave = JSON.parse(JSON.stringify(gameState));
+    if (!gameToSave.title) gameToSave.title = "Trò chơi chưa đặt tên";
+    gameToSave.lastModified = Date.now();
+
+    if (index !== -1) {
+        games[index] = gameToSave;
+    } else {
+        games.push(gameToSave);
+    }
+    
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(games));
+    showToast("Đã lưu trò chơi vào trình duyệt!");
+}
+
+function loadLocalGame(id) {
+    const games = getSavedGames();
+    const game = games.find(g => g.id === id);
+    if (game) {
+        gameState = game;
+        loadEditorDataToForm();
+        buildEditorUI();
+        switchScreen('screen-editor');
+        showToast("Đã mở trò chơi!");
+    }
+}
+
+function confirmDeleteLocalGame(id) {
+    showConfirmModal("Xóa trò chơi", "Bạn có chắc chắn muốn xóa trò chơi này khỏi thiết bị? Hành động này không thể hoàn tác.", () => {
+        let games = getSavedGames();
+        games = games.filter(g => g.id !== id);
+        localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(games));
+        renderLocalGames();
+        showToast("Đã xóa trò chơi!");
+    });
+}
+
+function renderLocalGames() {
+    const games = getSavedGames();
+    const section = $('saved-games-section');
+    const list = $('saved-games-list');
+    
+    if (games.length === 0) {
+        section.classList.add('hidden');
+        return;
+    }
+    
+    section.classList.remove('hidden');
+    // Sort by newest
+    games.sort((a, b) => (b.lastModified || 0) - (a.lastModified || 0));
+
+    list.innerHTML = games.map(game => {
+        const dateStr = game.lastModified ? new Date(game.lastModified).toLocaleString('vi-VN') : 'Không rõ';
+        let typeIcon = 'fa-gamepad';
+        let typeName = 'Khác';
+        if(game.type === 'matching') { typeIcon = 'fa-link'; typeName = 'Nối ý'; }
+        if(game.type === 'imagemap') { typeIcon = 'fa-image'; typeName = 'Thả vào hình'; }
+        if(game.type === 'categorize') { typeIcon = 'fa-boxes-stacked'; typeName = 'Phân loại'; }
+
+        return `
+            <div class="bg-white p-4 rounded-2xl border-2 border-indigo-100 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 hover:border-indigo-300 transition">
+                <div class="flex items-center gap-3 w-full sm:w-auto overflow-hidden">
+                    <div class="w-12 h-12 bg-indigo-50 text-indigo-500 rounded-xl flex items-center justify-center text-xl shrink-0 border border-indigo-100">
+                        <i class="fa-solid ${typeIcon}"></i>
+                    </div>
+                    <div class="flex-grow min-w-0">
+                        <h4 class="font-bold text-gray-800 truncate" title="${game.title}">${game.title}</h4>
+                        <div class="text-xs text-gray-500 flex gap-2">
+                            <span><i class="fa-solid fa-tag"></i> ${typeName}</span>
+                            <span><i class="fa-regular fa-clock"></i> ${dateStr}</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex gap-2 w-full sm:w-auto shrink-0 justify-end mt-2 sm:mt-0">
+                    <button onclick="loadLocalGame('${game.id}')" class="btn-kid bg-indigo-500 text-white px-4 py-2 rounded-xl text-sm font-bold hover:bg-indigo-600">
+                        Mở
+                    </button>
+                    <button onclick="confirmDeleteLocalGame('${game.id}')" class="btn-kid bg-red-100 text-red-500 px-3 py-2 rounded-xl text-sm font-bold hover:bg-red-500 hover:text-white transition-colors">
+                        <i class="fa-solid fa-trash"></i>
+                    </button>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+
+/**
+ * -----------------------------------------------------------------------------
+ * INITIALIZATION & DATA HANDLING (KHỞI TẠO DỮ LIỆU)
+ * -----------------------------------------------------------------------------
+ */
+function createNewGame(type) {
+    // Yêu cầu: Bắt đầu hoàn toàn trống
+    gameState = {
+        id: generateId(),
+        title: "",
+        subject: "",
+        instructions: "",
+        type: type,
+        content: null
+    };
+
+    if (type === 'matching') gameState.content = { pairs: [] };
+    else if (type === 'imagemap') gameState.content = { imageBase64: "", zones: [] };
+    else if (type === 'categorize') gameState.content = { categories: [], items: [] };
+
+    loadEditorDataToForm();
+    buildEditorUI();
+    switchScreen('screen-editor');
+}
+
+function loadEditorDataToForm() {
+    $('edit-title').value = gameState.title || "";
+    $('edit-subject').value = gameState.subject || "";
+    $('edit-instructions').value = gameState.instructions || "";
+}
+
+function saveFormToState() {
+    gameState.title = $('edit-title').value.trim();
+    gameState.subject = $('edit-subject').value.trim();
+    gameState.instructions = $('edit-instructions').value.trim();
+}
+
+function exportGame() {
+    saveFormToState();
+    // Validate empty game
+    if (gameState.type === 'matching' && gameState.content.pairs.length === 0) return showToast("Trò chơi chưa có nội dung!", "error");
+    if (gameState.type === 'imagemap' && !gameState.content.imageBase64) return showToast("Vui lòng tải ảnh lên!", "error");
+    
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(gameState));
+    const downloadAnchorNode = document.createElement('a');
+    downloadAnchorNode.setAttribute("href",     dataStr);
+    let fileName = gameState.title ? gameState.title.replace(/[^a-z0-9]/gi, '_').toLowerCase() : "tro_choi";
+    downloadAnchorNode.setAttribute("download", fileName + ".json");
+    document.body.appendChild(downloadAnchorNode); // required for firefox
+    downloadAnchorNode.click();
+    downloadAnchorNode.remove();
+    showToast("Đã xuất tệp trò chơi thành công!");
+}
+
+function importGame(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        try {
+            const importedData = JSON.parse(e.target.result);
+            if (!importedData.type || !importedData.content) throw new Error("File không hợp lệ");
+            gameState = importedData;
+            loadEditorDataToForm();
+            buildEditorUI();
+            switchScreen('screen-editor');
+            showToast("Tải trò chơi thành công!");
+        } catch (error) {
+            showToast("Lỗi khi đọc file. Vui lòng kiểm tra lại định dạng.", "error");
+        }
+    };
+    reader.readAsText(file);
+    event.target.value = ""; // Reset input
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * EDITOR BUILDERS (GIAO DIỆN TẠO NỘI DUNG DÀNH CHO GIÁO VIÊN)
+ * Yêu cầu: Không tự tạo nội dung, cung cấp công cụ thêm/sửa/xoá.
+ * -----------------------------------------------------------------------------
+ */
+function buildEditorUI() {
+    const ws = $('editor-workspace');
+    ws.innerHTML = ''; // Clear
+
+    if (gameState.type === 'matching') {
+        ws.innerHTML = `
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-3">
+                <h3 class="text-xl font-bold text-indigo-800"><i class="fa-solid fa-list mr-2"></i> Thiết lập Cặp Nối Ý</h3>
+                <div class="flex gap-2">
+                    <button onclick="downloadWordTemplate()" class="btn-kid bg-white text-indigo-600 border-2 border-indigo-200 px-3 py-2 rounded-xl font-bold text-sm hover:bg-indigo-50">
+                        <i class="fa-solid fa-file-word mr-1"></i> Mẫu Word
+                    </button>
+                    <label class="btn-kid bg-indigo-100 text-indigo-700 px-3 py-2 rounded-xl font-bold text-sm cursor-pointer hover:bg-indigo-200 border-2 border-indigo-200">
+                        <i class="fa-solid fa-upload mr-1"></i> Nhập Word
+                        <input type="file" accept=".doc, .docx" class="hidden" onchange="importFromWord(event)">
+                    </label>
+                    <button onclick="addMatchingPair()" class="btn-kid bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-sm">
+                        <i class="fa-solid fa-plus mr-1"></i> Thêm cặp mới
+                    </button>
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-4 text-center font-bold text-gray-600 mb-2">
+                <div>Cột Trái (Ý hỏi)</div>
+                <div>Cột Phải (Ý trả lời)</div>
+            </div>
+            <div id="matching-list" class="flex flex-col gap-3 overflow-y-auto pr-2" style="max-height: 40vh;"></div>
+            ${gameState.content.pairs.length === 0 ? `<div class="text-center py-10 text-gray-400 italic">Chưa có nội dung. Hãy bấm "Thêm cặp mới" để bắt đầu!</div>` : ''}
+        `;
+        renderMatchingList();
+    } 
+    else if (gameState.type === 'imagemap') {
+        ws.innerHTML = `
+            <div class="flex flex-wrap gap-4 justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-indigo-800"><i class="fa-regular fa-image mr-2"></i> Thiết lập Ảnh & Vùng Thả</h3>
+                <div class="flex gap-2">
+                    <label class="btn-kid bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-sm cursor-pointer">
+                        <i class="fa-solid fa-upload mr-1"></i> Tải ảnh nền
+                        <input type="file" accept="image/*" class="hidden" onchange="handleImageUpload(event)">
+                    </label>
+                    <button onclick="addDropZone()" class="btn-kid bg-secondary text-white px-4 py-2 rounded-xl font-bold text-sm" ${!gameState.content.imageBase64 ? 'disabled style="opacity:0.5"' : ''} id="btn-add-zone">
+                        <i class="fa-solid fa-plus mr-1"></i> Thêm vùng thả
+                    </button>
+                </div>
+            </div>
+            <div class="bg-gray-100 flex-grow rounded-2xl flex items-center justify-center overflow-hidden border-2 border-dashed border-gray-300 relative" id="image-editor-container" style="min-height: 300px;">
+                ${!gameState.content.imageBase64 ? `<div class="text-center text-gray-400"><i class="fa-regular fa-images text-5xl mb-2 block"></i>Hãy tải ảnh lên để bắt đầu</div>` : ''}
+            </div>
+            <div class="mt-4 border-t pt-4 hidden" id="zone-texts-editor">
+                <h4 class="font-bold text-gray-700 mb-2">Nhập đáp án cho từng vùng thả:</h4>
+                <div id="zone-inputs" class="flex flex-wrap gap-3"></div>
+            </div>
+        `;
+        if (gameState.content.imageBase64) renderImageEditor();
+    }
+    else if (gameState.type === 'categorize') {
+        ws.innerHTML = `
+            <div class="flex flex-wrap gap-4 justify-between items-center mb-4">
+                <h3 class="text-xl font-bold text-indigo-800"><i class="fa-solid fa-layer-group mr-2"></i> Thiết lập Phân Loại</h3>
+                <div class="flex gap-2 flex-wrap">
+                    <button onclick="downloadWordTemplate()" class="btn-kid bg-white text-indigo-600 border-2 border-indigo-200 px-3 py-2 rounded-xl font-bold text-sm hover:bg-indigo-50">
+                        <i class="fa-solid fa-file-word mr-1"></i> Mẫu Word
+                    </button>
+                    <label class="btn-kid bg-indigo-100 text-indigo-700 px-3 py-2 rounded-xl font-bold text-sm cursor-pointer hover:bg-indigo-200 border-2 border-indigo-200">
+                        <i class="fa-solid fa-upload mr-1"></i> Nhập Word
+                        <input type="file" accept=".doc, .docx" class="hidden" onchange="importFromWord(event)">
+                    </label>
+                    <button onclick="addCategory()" class="btn-kid bg-indigo-500 text-white px-4 py-2 rounded-xl font-bold text-sm">
+                        <i class="fa-solid fa-plus mr-1"></i> Thêm Nhóm
+                    </button>
+                    <button onclick="addCatItem()" class="btn-kid bg-secondary text-white px-4 py-2 rounded-xl font-bold text-sm">
+                        <i class="fa-solid fa-plus mr-1"></i> Thêm Thẻ từ
+                    </button>
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6" id="categorize-editor-container">
+                <!-- Groups Editor -->
+                <div class="bg-indigo-50 p-4 rounded-2xl border-2 border-indigo-100">
+                    <h4 class="font-bold text-indigo-800 mb-3 text-center">Các Nhóm (Khu vực thả)</h4>
+                    <div id="cat-groups-list" class="flex flex-col gap-2"></div>
+                </div>
+                <!-- Items Editor -->
+                <div class="bg-amber-50 p-4 rounded-2xl border-2 border-amber-100">
+                    <h4 class="font-bold text-amber-800 mb-3 text-center">Thẻ nội dung & Đáp án</h4>
+                    <div id="cat-items-list" class="flex flex-col gap-2"></div>
+                </div>
+            </div>
+        `;
+        renderCategorizeEditor();
+    }
+}
+
+/* --- Editor: Matching --- */
+function addMatchingPair() {
+    gameState.content.pairs.push({ id: generateId(), left: "", right: "" });
+    buildEditorUI();
+}
+
+function removeMatchingPair(id) {
+    gameState.content.pairs = gameState.content.pairs.filter(p => p.id !== id);
+    buildEditorUI();
+}
+
+function updateMatchingText(id, side, value) {
+    const pair = gameState.content.pairs.find(p => p.id === id);
+    if (pair) pair[side] = value;
+}
+
+function renderMatchingList() {
+    const list = $('matching-list');
+    if (!list) return;
+    gameState.content.pairs.forEach((pair, index) => {
+        const row = document.createElement('div');
+        row.className = "flex items-center gap-2 bg-white p-2 rounded-xl shadow-sm border border-gray-100 relative group";
+        row.innerHTML = `
+            <div class="w-8 text-center font-bold text-gray-400">${index + 1}</div>
+            <textarea class="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm focus:outline-none focus:border-indigo-400 resize-none h-16" 
+                      placeholder="Ý bên trái..." onchange="updateMatchingText('${pair.id}', 'left', this.value)">${pair.left}</textarea>
+            <div class="text-indigo-300"><i class="fa-solid fa-link"></i></div>
+            <textarea class="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm focus:outline-none focus:border-indigo-400 resize-none h-16" 
+                      placeholder="Ý bên phải (đáp án)..." onchange="updateMatchingText('${pair.id}', 'right', this.value)">${pair.right}</textarea>
+            <button onclick="removeMatchingPair('${pair.id}')" class="text-red-400 hover:text-red-600 px-2 transition">
+                <i class="fa-solid fa-trash"></i>
+            </button>
+        `;
+        list.appendChild(row);
+    });
+}
+
+/* --- Editor: Image Map --- */
+function handleImageUpload(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        gameState.content.imageBase64 = e.target.result;
+        gameState.content.zones = []; // reset zones on new image
+        buildEditorUI();
+    };
+    reader.readAsDataURL(file);
+}
+
+function renderImageEditor() {
+    const container = $('image-editor-container');
+    container.innerHTML = `
+        <div id="image-preview-container">
+            <img id="image-preview" src="${gameState.content.imageBase64}" draggable="false">
+            <div id="zones-layer" class="absolute inset-0"></div>
+        </div>
+    `;
+    
+    // Đợi ảnh load để tính kích thước
+    $('image-preview').onload = () => {
+        renderEditorZones();
+        $('btn-add-zone').disabled = false;
+        $('btn-add-zone').style.opacity = '1';
+        $('zone-texts-editor').classList.remove('hidden');
+    }
+}
+
+function addDropZone() {
+    // Default size relative to percentage to remain responsive
+    gameState.content.zones.push({
+        id: generateId(),
+        x: 10, y: 10, // percentages
+        w: 20, h: 10, // percentages
+        text: ""
+    });
+    renderEditorZones();
+}
+
+function removeDropZone(id) {
+    gameState.content.zones = gameState.content.zones.filter(z => z.id !== id);
+    renderEditorZones();
+}
+
+function updateZoneText(id, value) {
+    const z = gameState.content.zones.find(z => z.id === id);
+    if(z) z.text = value;
+}
+
+function renderEditorZones() {
+    const layer = $('zones-layer');
+    const inputsContainer = $('zone-inputs');
+    if (!layer || !inputsContainer) return;
+    
+    layer.innerHTML = '';
+    inputsContainer.innerHTML = '';
+    
+    if (gameState.content.zones.length === 0) {
+        $('zone-texts-editor').classList.add('hidden');
+        return;
+    }
+    
+    $('zone-texts-editor').classList.remove('hidden');
+
+    gameState.content.zones.forEach((zone, index) => {
+        // --- Draw Zone on Image ---
+        const div = document.createElement('div');
+        div.className = 'drop-zone-edit';
+        div.style.left = `${zone.x}%`;
+        div.style.top = `${zone.y}%`;
+        div.style.width = `${zone.w}%`;
+        div.style.height = `${zone.h}%`;
+        div.innerHTML = `
+            <span class="opacity-50 text-xl font-black">${index + 1}</span>
+            <div class="delete-zone-btn" onclick="removeDropZone('${zone.id}')"><i class="fa-solid fa-xmark"></i></div>
+            <div class="resize-handle" onpointerdown="startResizeZone(event, '${zone.id}')"></div>
+        `;
+        
+        // Simple drag functionality for zone
+        div.onpointerdown = (e) => {
+            if (e.target.classList.contains('resize-handle') || e.target.closest('.delete-zone-btn')) return;
+            e.preventDefault();
+            const containerBox = $('image-preview-container').getBoundingClientRect();
+            let startX = e.clientX;
+            let startY = e.clientY;
+            let startLeft = zone.x;
+            let startTop = zone.y;
+            
+            const onMove = (ev) => {
+                let dx = ((ev.clientX - startX) / containerBox.width) * 100;
+                let dy = ((ev.clientY - startY) / containerBox.height) * 100;
+                zone.x = Math.max(0, Math.min(100 - zone.w, startLeft + dx));
+                zone.y = Math.max(0, Math.min(100 - zone.h, startTop + dy));
+                div.style.left = `${zone.x}%`;
+                div.style.top = `${zone.y}%`;
+            };
+            const onUp = () => {
+                window.removeEventListener('pointermove', onMove);
+                window.removeEventListener('pointerup', onUp);
+            };
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+        };
+        layer.appendChild(div);
+
+        // --- Inputs for Texts ---
+        const inputWrap = document.createElement('div');
+        inputWrap.className = "flex items-center gap-2 bg-white border border-gray-300 rounded-lg p-2 shadow-sm";
+        inputWrap.innerHTML = `
+            <span class="bg-blue-100 text-blue-800 w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs">${index + 1}</span>
+            <input type="text" class="outline-none border-none bg-transparent w-32 md:w-48 text-sm font-semibold text-gray-700" 
+                   placeholder="Nhập đáp án..." value="${zone.text}" onchange="updateZoneText('${zone.id}', this.value)">
+        `;
+        inputsContainer.appendChild(inputWrap);
+    });
+}
+
+function startResizeZone(e, id) {
+    e.preventDefault();
+    e.stopPropagation(); // Prevent drag
+    const zone = gameState.content.zones.find(z => z.id === id);
+    if (!zone) return;
+    
+    const containerBox = $('image-preview-container').getBoundingClientRect();
+    let startX = e.clientX;
+    let startY = e.clientY;
+    let startW = zone.w;
+    let startH = zone.h;
+
+    const onMove = (ev) => {
+        let dx = ((ev.clientX - startX) / containerBox.width) * 100;
+        let dy = ((ev.clientY - startY) / containerBox.height) * 100;
+        zone.w = Math.max(5, Math.min(100 - zone.x, startW + dx)); // min 5% width
+        zone.h = Math.max(5, Math.min(100 - zone.y, startH + dy)); // min 5% height
+        renderEditorZones(); // re-render to apply visually
+    };
+    const onUp = () => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+}
+
+/* --- Editor: Categorize --- */
+function addCategory() {
+    gameState.content.categories.push({ id: generateId(), name: "" });
+    buildEditorUI();
+}
+function addCatItem() {
+    gameState.content.items.push({ id: generateId(), text: "", catId: "" });
+    buildEditorUI();
+}
+function removeCategory(id) {
+    gameState.content.categories = gameState.content.categories.filter(c => c.id !== id);
+    // Reset items belonging to this cat
+    gameState.content.items.forEach(item => { if(item.catId === id) item.catId = ""; });
+    buildEditorUI();
+}
+function removeCatItem(id) {
+    gameState.content.items = gameState.content.items.filter(i => i.id !== id);
+    buildEditorUI();
+}
+function updateCatName(id, val) {
+    const c = gameState.content.categories.find(c => c.id === id);
+    if(c) c.name = val;
+}
+function updateItemData(id, field, val) {
+    const i = gameState.content.items.find(i => i.id === id);
+    if(i) i[field] = val;
+}
+
+function renderCategorizeEditor() {
+    const grpList = $('cat-groups-list');
+    const itmList = $('cat-items-list');
+    if(!grpList || !itmList) return;
+
+    if(gameState.content.categories.length === 0) {
+        grpList.innerHTML = `<div class="text-sm text-center text-gray-400 italic py-4">Chưa có nhóm. Bấm "Thêm nhóm"</div>`;
+    } else {
+        gameState.content.categories.forEach((cat, idx) => {
+            const div = document.createElement('div');
+            div.className = "flex items-center gap-2 bg-white p-2 rounded-xl border border-indigo-200";
+            div.innerHTML = `
+                <span class="font-bold text-indigo-400 text-sm">N${idx+1}</span>
+                <input type="text" class="flex-1 outline-none text-sm font-semibold" placeholder="Tên nhóm..." value="${cat.name}" onchange="updateCatName('${cat.id}', this.value)">
+                <button onclick="removeCategory('${cat.id}')" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-trash"></i></button>
+            `;
+            grpList.appendChild(div);
+        });
+    }
+
+    if(gameState.content.items.length === 0) {
+        itmList.innerHTML = `<div class="text-sm text-center text-gray-400 italic py-4">Chưa có thẻ từ. Bấm "Thêm thẻ từ"</div>`;
+    } else {
+        // Build option list for selects
+        let optionsHTML = `<option value="">-- Chọn nhóm đúng --</option>`;
+        gameState.content.categories.forEach((cat, idx) => {
+            optionsHTML += `<option value="${cat.id}">N${idx+1}: ${cat.name || 'Chưa đặt tên'}</option>`;
+        });
+
+        gameState.content.items.forEach((item, idx) => {
+            const div = document.createElement('div');
+            div.className = "flex items-center gap-2 bg-white p-2 rounded-xl border border-amber-200 flex-wrap";
+            
+            // Re-select proper option
+            let selectHTML = `<select class="text-xs bg-gray-50 border rounded p-1 outline-none max-w-[120px]" onchange="updateItemData('${item.id}', 'catId', this.value)">${optionsHTML}</select>`;
+            
+            div.innerHTML = `
+                <input type="text" class="flex-1 min-w-[100px] outline-none text-sm border-b border-dashed border-gray-300" placeholder="Nội dung thẻ..." value="${item.text}" onchange="updateItemData('${item.id}', 'text', this.value)">
+                ${selectHTML}
+                <button onclick="removeCatItem('${item.id}')" class="text-red-400 hover:text-red-600 ml-auto"><i class="fa-solid fa-trash"></i></button>
+            `;
+            // Set select value after innerHTML
+            div.querySelector('select').value = item.catId;
+            itmList.appendChild(div);
+        });
+    }
+}
+
+
+/**
+ * -----------------------------------------------------------------------------
+ * PLAY MODE (CHẾ ĐỘ HỌC SINH CHƠI)
+ * Yêu cầu: Ẩn công cụ giáo viên, logic kéo thả/nối hoạt động trơn tru.
+ * -----------------------------------------------------------------------------
+ */
+function preparePlay() {
+    saveFormToState();
+    
+    // Validation cơ bản trước khi chơi
+    if (!gameState.title) return showToast("Thầy/Cô vui lòng nhập Tên trò chơi!", "error");
+    if (gameState.type === 'matching') {
+        const validPairs = gameState.content.pairs.filter(p => p.left.trim() !== '' && p.right.trim() !== '');
+        if (validPairs.length === 0) return showToast("Cần ít nhất 1 cặp có đủ nội dung để chơi!", "error");
+    }
+    if (gameState.type === 'imagemap') {
+        if (!gameState.content.imageBase64) return showToast("Cần tải ảnh lên!", "error");
+        if (gameState.content.zones.length === 0) return showToast("Cần tạo ít nhất 1 vùng thả!", "error");
+    }
+    if (gameState.type === 'categorize') {
+        if (gameState.content.categories.length === 0 || gameState.content.items.length === 0) 
+            return showToast("Cần tạo nhóm và thẻ từ!", "error");
+    }
+
+    $('play-title').innerText = gameState.title;
+    $('play-subject').innerText = gameState.subject;
+    $('play-instructions').innerText = gameState.instructions || "Hãy hoàn thành bài tập bên dưới nhé!";
+    
+    resetPlay(); // Initialize logic and UI
+    switchScreen('screen-play');
+}
+
+function resetPlay() {
+    $('play-controls').classList.remove('hidden');
+    const ws = $('play-workspace');
+    ws.innerHTML = '';
+    
+    // Reset playState based on deep clone to not mutate original
+    playState = JSON.parse(JSON.stringify(gameState.content));
+    
+    // Clear old SVGs or specific listeners
+    window.onpointermove = null;
+    window.onpointerup = null;
+
+    if (gameState.type === 'matching') {
+        initMatchingPlay(ws);
+    } else if (gameState.type === 'imagemap') {
+        initImageMapPlay(ws);
+    } else if (gameState.type === 'categorize') {
+        initCategorizePlay(ws);
+    }
+}
+
+/* --- Play: Matching Logic (Vẽ đường thẳng SVG) --- */
+let matchLines = []; // {leftId, rightId}
+let currentLine = null; // SVG Element
+let startNode = null;
+
+function initMatchingPlay(ws) {
+    matchLines = [];
+    // Chỉ lấy các cặp hợp lệ
+    const validPairs = playState.pairs.filter(p => p.left.trim() !== '' && p.right.trim() !== '');
+    
+    // Tách left và right, trộn đều mảng right
+    let leftItems = validPairs.map(p => ({ id: p.id, text: p.left }));
+    let rightItems = validPairs.map(p => ({ id: p.id, text: p.right }));
+    rightItems = shuffle(rightItems);
+
+    ws.innerHTML = `
+        <svg id="svg-canvas"></svg>
+        <div class="grid grid-cols-2 gap-8 md:gap-16 w-full max-w-4xl mx-auto z-20 relative px-4 py-8">
+            <!-- Left Column -->
+            <div class="flex flex-col gap-6 items-end" id="match-left-col">
+                ${leftItems.map(item => `
+                    <div class="match-node bg-white border-4 border-indigo-200 shadow-md rounded-2xl p-4 text-center min-w-[150px] max-w-[250px] font-bold text-gray-700 relative" data-id="${item.id}" data-side="left">
+                        ${item.text}
+                        <div class="absolute w-4 h-4 bg-indigo-500 rounded-full top-1/2 -right-2 transform -translate-y-1/2 shadow-inner border-2 border-white connect-point"></div>
+                    </div>
+                `).join('')}
+            </div>
+            <!-- Right Column -->
+            <div class="flex flex-col gap-6 items-start" id="match-right-col">
+                ${rightItems.map(item => `
+                    <div class="match-node bg-white border-4 border-emerald-200 shadow-md rounded-2xl p-4 text-center min-w-[150px] max-w-[250px] font-bold text-gray-700 relative" data-id="${item.id}" data-side="right">
+                        <div class="absolute w-4 h-4 bg-emerald-500 rounded-full top-1/2 -left-2 transform -translate-y-1/2 shadow-inner border-2 border-white connect-point"></div>
+                        ${item.text}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    // Attach Pointer Events for drawing lines
+    const svg = $('svg-canvas');
+    const nodes = ws.querySelectorAll('.match-node');
+    
+    nodes.forEach(node => {
+        node.onpointerdown = (e) => {
+            e.preventDefault(); // Prevent scrolling on touch
+            startNode = node;
+            const side = node.dataset.side;
+            const pt = getCenter(node.querySelector('.connect-point'));
+            
+            // Xóa đường cũ nếu có xuất phát từ node này
+            matchLines = matchLines.filter(l => l[side+'Id'] !== node.dataset.id);
+            redrawSVG();
+
+            // Create temporary line
+            currentLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            currentLine.setAttribute('x1', pt.x);
+            currentLine.setAttribute('y1', pt.y);
+            currentLine.setAttribute('x2', e.clientX - svg.getBoundingClientRect().left);
+            currentLine.setAttribute('y2', e.clientY - svg.getBoundingClientRect().top);
+            currentLine.setAttribute('stroke', side === 'left' ? '#6366F1' : '#10B981'); // Indigo or Emerald
+            currentLine.setAttribute('stroke-width', '6');
+            currentLine.setAttribute('stroke-linecap', 'round');
+            currentLine.setAttribute('stroke-dasharray', '8 4');
+            svg.appendChild(currentLine);
+            
+            // Highlight node
+            node.classList.add('ring-4', 'ring-yellow-400');
+            
+            window.addEventListener('pointermove', onMatchMove);
+            window.addEventListener('pointerup', onMatchUp);
+        };
+    });
+
+    const onMatchMove = (e) => {
+        if (!currentLine) return;
+        const svgRect = svg.getBoundingClientRect();
+        currentLine.setAttribute('x2', e.clientX - svgRect.left);
+        currentLine.setAttribute('y2', e.clientY - svgRect.top);
+    };
+
+    const onMatchUp = (e) => {
+        window.removeEventListener('pointermove', onMatchMove);
+        window.removeEventListener('pointerup', onMatchUp);
+        if (!startNode || !currentLine) return;
+        
+        startNode.classList.remove('ring-4', 'ring-yellow-400');
+        
+        // Find element under pointer
+        // Need to hide currentLine temporarily to get element under it
+        currentLine.style.display = 'none';
+        let elemBelow = document.elementFromPoint(e.clientX, e.clientY);
+        currentLine.style.display = '';
+        
+        let targetNode = elemBelow ? elemBelow.closest('.match-node') : null;
+        
+        if (targetNode && targetNode.dataset.side !== startNode.dataset.side) {
+            // Valid connection (Left <-> Right)
+            const leftId = startNode.dataset.side === 'left' ? startNode.dataset.id : targetNode.dataset.id;
+            const rightId = startNode.dataset.side === 'right' ? startNode.dataset.id : targetNode.dataset.id;
+            
+            // Xóa đường cũ nếu targetNode đã nối
+            matchLines = matchLines.filter(l => l.leftId !== leftId && l.rightId !== rightId);
+            
+            matchLines.push({ leftId, rightId });
+        }
+        
+        // Clean up temp line and redraw logic
+        currentLine.remove();
+        currentLine = null;
+        startNode = null;
+        redrawSVG();
+    };
+    
+    // Recalculate on resize
+    window.addEventListener('resize', redrawSVG);
+}
+
+function getCenter(el) {
+    const wsRect = $('play-workspace').getBoundingClientRect();
+    const rect = el.getBoundingClientRect();
+    return {
+        x: rect.left + rect.width / 2 - wsRect.left,
+        y: rect.top + rect.height / 2 - wsRect.top
+    };
+}
+
+function redrawSVG() {
+    const svg = $('svg-canvas');
+    if (!svg) return;
+    svg.innerHTML = ''; // Clear
+    
+    matchLines.forEach(line => {
+        const leftEl = document.querySelector(`.match-node[data-side="left"][data-id="${line.leftId}"] .connect-point`);
+        const rightEl = document.querySelector(`.match-node[data-side="right"][data-id="${line.rightId}"] .connect-point`);
+        if(leftEl && rightEl) {
+            const p1 = getCenter(leftEl);
+            const p2 = getCenter(rightEl);
+            const svgLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            svgLine.setAttribute('x1', p1.x); svgLine.setAttribute('y1', p1.y);
+            svgLine.setAttribute('x2', p2.x); svgLine.setAttribute('y2', p2.y);
+            svgLine.setAttribute('stroke', '#F59E0B'); // Yellow-500
+            svgLine.setAttribute('stroke-width', '6');
+            svgLine.setAttribute('stroke-linecap', 'round');
+            svg.appendChild(svgLine);
+        }
+    });
+}
+
+/* --- Play: Image Map (Kéo thả vào vùng ảnh) --- */
+function initImageMapPlay(ws) {
+    // Chỉ lấy zones có nội dung
+    const validZones = playState.zones.filter(z => z.text.trim() !== '');
+    let answers = validZones.map(z => ({ id: z.id, text: z.text }));
+    answers = shuffle(answers); // Trộn đáp án
+    
+    ws.innerHTML = `
+        <div class="flex flex-col items-center gap-6 w-full">
+            <div id="play-img-container" class="relative inline-block max-w-full">
+                <img src="${playState.imageBase64}" class="max-w-full h-auto rounded-xl shadow-md pointer-events-none user-select-none">
+                <div id="play-zones-layer" class="absolute inset-0">
+                    ${validZones.map((z, idx) => `
+                        <div class="drop-zone-play" data-zone-id="${z.id}" 
+                             style="left:${z.x}%; top:${z.y}%; width:${z.w}%; height:${z.h}%;">
+                             <span class="opacity-30 text-2xl font-bold">${idx+1}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            </div>
+            
+            <div class="bg-indigo-50 border-2 border-indigo-100 rounded-3xl p-6 w-full shadow-inner flex flex-wrap gap-4 justify-center items-center min-h-[100px]" id="draggable-pool">
+                ${answers.map(ans => `
+                    <div class="draggable-item bg-white border-2 border-indigo-400 text-indigo-800 font-bold px-4 py-2 rounded-xl shadow-md" data-ans-id="${ans.id}">
+                        ${ans.text}
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    initCustomDragDrop(ws.querySelectorAll('.draggable-item'), 'imagemap');
+}
+
+/* --- Play: Categorize (Kéo thẻ vào nhóm) --- */
+function initCategorizePlay(ws) {
+    const categories = playState.categories;
+    let items = shuffle([...playState.items]);
+
+    ws.innerHTML = `
+        <div class="flex flex-col gap-6 w-full">
+            <!-- Pool -->
+            <div class="bg-gray-100 border-2 border-dashed border-gray-300 rounded-3xl p-4 md:p-6 w-full shadow-inner flex flex-wrap gap-3 justify-center items-center min-h-[120px]" id="draggable-pool">
+                ${items.map(item => `
+                    <div class="draggable-item bg-white border-2 border-amber-400 text-amber-800 font-bold px-4 py-2 rounded-xl shadow-md" data-item-id="${item.id}">
+                        ${item.text}
+                    </div>
+                `).join('')}
+            </div>
+
+            <!-- Categories -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 w-full">
+                ${categories.map(cat => `
+                    <div class="bg-white rounded-3xl border-4 border-indigo-200 shadow-md overflow-hidden flex flex-col h-48 drop-zone-cat" data-cat-id="${cat.id}">
+                        <div class="bg-indigo-100 py-2 text-center font-bold text-indigo-800 border-b-2 border-indigo-200">
+                            ${cat.name}
+                        </div>
+                        <div class="flex-grow p-2 flex flex-col gap-2 overflow-y-auto items-center inner-drop">
+                            <!-- Items go here -->
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+    `;
+
+    initCustomDragDrop(ws.querySelectorAll('.draggable-item'), 'categorize');
+}
+
+/* --- Universal Pointer-based Drag & Drop Engine cho Play Mode --- */
+function initCustomDragDrop(draggables, mode) {
+    let activeDrag = null;
+    let startX = 0, startY = 0;
+    let originRect = null;
+    let clone = null;
+    
+    draggables.forEach(el => {
+        el.onpointerdown = (e) => {
+            e.preventDefault(); // Tránh scroll mobile
+            if (activeDrag) return;
+            activeDrag = el;
+            
+            originRect = el.getBoundingClientRect();
+            startX = e.clientX;
+            startY = e.clientY;
+            
+            // Tạo bản sao để kéo
+            clone = el.cloneNode(true);
+            clone.classList.add('dragging');
+            clone.style.position = 'fixed';
+            clone.style.zIndex = 9999;
+            clone.style.margin = 0;
+            // Center the clone on pointer
+            clone.style.width = `${originRect.width}px`;
+            clone.style.height = `${originRect.height}px`;
+            clone.style.left = `${startX - originRect.width/2}px`;
+            clone.style.top = `${startY - originRect.height/2}px`;
+            document.body.appendChild(clone);
+            
+            // Làm mờ bản gốc
+            el.style.opacity = '0.3';
+
+            window.addEventListener('pointermove', onMove);
+            window.addEventListener('pointerup', onUp);
+        };
+    });
+
+    const onMove = (e) => {
+        if (!clone) return;
+        clone.style.left = `${e.clientX - originRect.width/2}px`;
+        clone.style.top = `${e.clientY - originRect.height/2}px`;
+
+        // Highlight drop zone logic
+        clone.style.display = 'none';
+        let elemBelow = document.elementFromPoint(e.clientX, e.clientY);
+        clone.style.display = '';
+
+        // Reset all highlights
+        document.querySelectorAll('.drag-over').forEach(z => z.classList.remove('drag-over'));
+        
+        if(elemBelow) {
+            if (mode === 'imagemap') {
+                let zone = elemBelow.closest('.drop-zone-play');
+                if(zone) zone.classList.add('drag-over');
+            } else if (mode === 'categorize') {
+                let zone = elemBelow.closest('.drop-zone-cat');
+                if(zone) zone.classList.add('drag-over');
+            }
+        }
+    };
+
+    const onUp = (e) => {
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        if (!activeDrag || !clone) return;
+
+        clone.style.display = 'none';
+        let elemBelow = document.elementFromPoint(e.clientX, e.clientY);
+        clone.remove();
+        clone = null;
+        
+        activeDrag.style.opacity = '1';
+        document.querySelectorAll('.drag-over').forEach(z => z.classList.remove('drag-over'));
+
+        if (!elemBelow) {
+            activeDrag = null; return;
+        }
+
+        // Logic xử lý khi thả
+        if (mode === 'imagemap') {
+            let zone = elemBelow.closest('.drop-zone-play');
+            if (zone) {
+                // Remove from parent, append to zone. Empty old child if exists back to pool
+                if (zone.children.length > 1) { // 1 is the number span
+                    const oldItem = zone.querySelector('.draggable-item');
+                    if (oldItem) $('draggable-pool').appendChild(oldItem);
+                }
+                
+                // Style for inner zone
+                activeDrag.style.position = 'static';
+                activeDrag.style.width = '90%';
+                activeDrag.style.height = '80%';
+                activeDrag.style.display = 'flex';
+                activeDrag.style.alignItems = 'center';
+                activeDrag.style.justifyContent = 'center';
+                activeDrag.style.fontSize = '80%'; // shrink text
+                activeDrag.style.padding = '4px';
+                
+                zone.appendChild(activeDrag);
+            } else {
+                // Return to pool, reset style
+                resetDraggableStyle(activeDrag);
+                $('draggable-pool').appendChild(activeDrag);
+            }
+        } 
+        else if (mode === 'categorize') {
+            let catBox = elemBelow.closest('.drop-zone-cat');
+            if (catBox) {
+                const inner = catBox.querySelector('.inner-drop');
+                resetDraggableStyle(activeDrag);
+                activeDrag.style.width = '90%'; // fill column nicely
+                inner.appendChild(activeDrag);
+            } else {
+                resetDraggableStyle(activeDrag);
+                $('draggable-pool').appendChild(activeDrag);
+            }
+        }
+        
+        activeDrag = null;
+    };
+
+    function resetDraggableStyle(el) {
+        el.style.position = 'static';
+        el.style.width = 'auto';
+        el.style.height = 'auto';
+        el.style.fontSize = '';
+        el.style.padding = '';
+        el.style.display = 'block';
+    }
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * CHECK RESULTS & FEEDBACK (CHẤM ĐIỂM)
+ * Yêu cầu: Kiểm tra dựa trên đáp án của giáo viên. Hiển thị hiệu ứng trực quan.
+ * -----------------------------------------------------------------------------
+ */
+function checkResult() {
+    let total = 0;
+    let correct = 0;
+
+    if (gameState.type === 'matching') {
+        const validPairs = playState.pairs.filter(p => p.left.trim() !== '' && p.right.trim() !== '');
+        total = validPairs.length;
+        
+        // Reset styles
+        document.querySelectorAll('.match-node').forEach(n => {
+            n.classList.remove('bg-green-100', 'border-green-400', 'bg-red-100', 'border-red-400');
+        });
+
+        matchLines.forEach(line => {
+            // In matching, id of left and right are the same from the original pair
+            if (line.leftId === line.rightId) {
+                correct++;
+                // highlight correct
+                document.querySelector(`.match-node[data-side="left"][data-id="${line.leftId}"]`).classList.add('bg-green-100', 'border-green-400', 'correct-anim');
+                document.querySelector(`.match-node[data-side="right"][data-id="${line.rightId}"]`).classList.add('bg-green-100', 'border-green-400', 'correct-anim');
+            } else {
+                // highlight wrong
+                document.querySelector(`.match-node[data-side="left"][data-id="${line.leftId}"]`).classList.add('bg-red-100', 'border-red-400', 'wrong-anim');
+                document.querySelector(`.match-node[data-side="right"][data-id="${line.rightId}"]`).classList.add('bg-red-100', 'border-red-400', 'wrong-anim');
+            }
+        });
+    } 
+    else if (gameState.type === 'imagemap') {
+        const validZones = playState.zones.filter(z => z.text.trim() !== '');
+        total = validZones.length;
+
+        document.querySelectorAll('.drop-zone-play').forEach(zone => {
+            zone.classList.remove('border-green-500', 'bg-green-100', 'border-red-500', 'bg-red-100');
+            const item = zone.querySelector('.draggable-item');
+            if (item) {
+                // ans-id is the id of the zone originally
+                if (item.dataset.ansId === zone.dataset.zoneId) {
+                    correct++;
+                    zone.classList.add('border-green-500', 'bg-green-100', 'correct-anim');
+                } else {
+                    zone.classList.add('border-red-500', 'bg-red-100', 'wrong-anim');
+                }
+            }
+        });
+    }
+    else if (gameState.type === 'categorize') {
+        const items = playState.items; // All items
+        total = items.length;
+
+        document.querySelectorAll('.draggable-item').forEach(itemEl => {
+            itemEl.classList.remove('bg-green-100', 'border-green-500', 'bg-red-100', 'border-red-500');
+            
+            const itemId = itemEl.dataset.itemId;
+            const trueCatId = items.find(i => i.id === itemId).catId;
+            
+            const parentZone = itemEl.closest('.drop-zone-cat');
+            
+            if (parentZone) {
+                const currentCatId = parentZone.dataset.catId;
+                if (currentCatId === trueCatId) {
+                    correct++;
+                    itemEl.classList.add('bg-green-100', 'border-green-500', 'correct-anim');
+                } else {
+                    itemEl.classList.add('bg-red-100', 'border-red-500', 'wrong-anim');
+                }
+            }
+        });
+    }
+
+    showResultModal(correct, total);
+}
+
+function showResultModal(correct, total) {
+    const modal = $('result-modal');
+    const content = $('result-modal-content');
+    const title = $('result-title');
+    const icon = $('result-icon');
+    const score = $('result-score');
+
+    modal.classList.remove('hidden');
+    
+    // Tiny delay for animation
+    setTimeout(() => {
+        content.classList.remove('scale-95');
+        content.classList.add('scale-100');
+    }, 10);
+
+    score.innerText = `Đúng: ${correct} / ${total}`;
+
+    if (correct === total && total > 0) {
+        title.innerText = "Tuyệt vời!";
+        title.className = "text-3xl font-bold mb-2 text-green-500";
+        icon.innerHTML = "🌟";
+        fireConfetti();
+    } else if (correct > total / 2) {
+        title.innerText = "Làm tốt lắm!";
+        title.className = "text-3xl font-bold mb-2 text-yellow-500";
+        icon.innerHTML = "👍";
+    } else {
+        title.innerText = "Cố gắng lên nhé!";
+        title.className = "text-3xl font-bold mb-2 text-orange-500";
+        icon.innerHTML = "💪";
+    }
+}
+
+function closeResultModal() {
+    $('result-modal').classList.add('hidden');
+    $('result-modal-content').classList.remove('scale-100');
+    $('result-modal-content').classList.add('scale-95');
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * EFFECTS (HIỆU ỨNG TUNG HOA KHI ĐIỂM TỐI ĐA)
+ * -----------------------------------------------------------------------------
+ */
+function fireConfetti() {
+    const canvas = document.getElementById('confetti-canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    
+    const particles = [];
+    const colors = ['#fce18a', '#ff726d', '#b48def', '#f4306d', '#10B981', '#3B82F6'];
+    
+    for (let i = 0; i < 150; i++) {
+        particles.push({
+            x: canvas.width / 2, y: canvas.height / 2 + 200,
+            r: Math.random() * 6 + 4,
+            dx: Math.random() * 20 - 10,
+            dy: Math.random() * -20 - 10,
+            color: colors[Math.floor(Math.random() * colors.length)],
+            tilt: Math.floor(Math.random() * 10) - 10,
+            tiltAngle: 0, tiltAngleInc: (Math.random() * 0.07) + 0.05
+        });
+    }
+
+    let animationFrame;
+    function render() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        let active = false;
+        particles.forEach(p => {
+            p.tiltAngle += p.tiltAngleInc;
+            p.y += (Math.cos(p.tiltAngle) + 1 + p.r / 2) / 2;
+            p.x += Math.sin(p.tiltAngle) * 2;
+            p.dy += 0.5; // gravity
+            p.y += p.dy;
+            p.x += p.dx;
+            
+            if (p.y <= canvas.height) active = true;
+
+            ctx.beginPath();
+            ctx.lineWidth = p.r;
+            ctx.strokeStyle = p.color;
+            ctx.moveTo(p.x + p.tilt + p.r, p.y);
+            ctx.lineTo(p.x + p.tilt, p.y + p.tilt + p.r);
+            ctx.stroke();
+        });
+        
+        if (active) animationFrame = requestAnimationFrame(render);
+        else ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+    render();
+    
+    // Stop after 3 seconds
+    setTimeout(() => { cancelAnimationFrame(animationFrame); ctx.clearRect(0, 0, canvas.width, canvas.height); }, 4000);
+}
+
+/**
+ * -----------------------------------------------------------------------------
+ * IMPORT/EXPORT WORD (TẢI MẪU & NHẬP TỪ WORD)
+ * -----------------------------------------------------------------------------
+ */
+function downloadWordTemplate() {
+    let title, desc, tableHtml;
+    
+    if (gameState.type === 'matching') {
+        title = "Mẫu Bài Tập Nối Ý";
+        desc = "Điền nội dung vào bảng. Cột 1 là ý hỏi, Cột 2 là ý trả lời (đáp án đúng). Vui lòng KHÔNG thay đổi tiêu đề các cột.";
+        tableHtml = `
+            <tr><th style="background-color:#4F46E5; color:white; padding:8px;">Cột Trái (Ý hỏi)</th><th style="background-color:#10B981; color:white; padding:8px;">Cột Phải (Ý trả lời)</th></tr>
+            <tr><td style="padding:8px;">Thủ đô của Việt Nam</td><td style="padding:8px;">Hà Nội</td></tr>
+            <tr><td style="padding:8px;">Loài chim lớn nhất</td><td style="padding:8px;">Đà điểu</td></tr>
+        `;
+    } else if (gameState.type === 'categorize') {
+        title = "Mẫu Bài Tập Phân Loại";
+        desc = "Điền nội dung vào bảng. Cột 1 là Tên Nhóm, Cột 2 là Các thẻ từ thuộc nhóm đó (cách nhau bởi dấu phẩy). Vui lòng KHÔNG thay đổi tiêu đề các cột.";
+        tableHtml = `
+            <tr><th style="background-color:#4F46E5; color:white; padding:8px;">Tên Nhóm</th><th style="background-color:#F59E0B; color:white; padding:8px;">Các thẻ từ (phân cách bằng dấu phẩy)</th></tr>
+            <tr><td style="padding:8px;">Động vật</td><td style="padding:8px;">Chó, Mèo, Gà, Lợn</td></tr>
+            <tr><td style="padding:8px;">Thực vật</td><td style="padding:8px;">Cây chanh, Hoa hồng, Bắp cải</td></tr>
+        `;
+    } else {
+        return showToast("Dạng bài tập này chưa hỗ trợ xuất mẫu Word!", "error");
+    }
+
+    const htmlContent = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
+    <head><meta charset='utf-8'><title>${title}</title></head>
+    <body style="font-family: Arial, sans-serif;">
+    <h2 style="color: #4F46E5; text-align: center;">${title} - Thử Tài Kéo Thả</h2>
+    <p style="font-size: 14px; color: #555;">${desc}</p>
+    <table border="1" style="border-collapse: collapse; width: 100%; border: 1px solid #ccc; text-align: left;">
+        ${tableHtml}
+        <tr><td style="padding:8px;"></td><td style="padding:8px;"></td></tr>
+        <tr><td style="padding:8px;"></td><td style="padding:8px;"></td></tr>
+        <tr><td style="padding:8px;"></td><td style="padding:8px;"></td></tr>
+    </table>
+    </body></html>
+    `;
+    const blob = new Blob([htmlContent], { type: 'application/msword' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `Mau_Bai_Tap.doc`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Đã tải tệp mẫu Word!");
+}
+
+function importFromWord(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const isDocx = file.name.toLowerCase().endsWith('.docx');
+    const reader = new FileReader();
+
+    reader.onload = function(e) {
+        if (isDocx && window.mammoth) {
+            mammoth.convertToHtml({arrayBuffer: e.target.result})
+                .then(function(result) {
+                    parseHtmlTableToData(result.value);
+                })
+                .catch(function(err) {
+                    showToast("Lỗi đọc file docx. Hãy thử dùng file .doc vừa tải về!", "error");
+                    console.error(err);
+                });
+        } else {
+            // Đọc file .doc dạng HTML
+            const textReader = new FileReader();
+            textReader.onload = function(e2) {
+                parseHtmlTableToData(e2.target.result);
+            };
+            textReader.readAsText(file);
+        }
+    };
+
+    if (isDocx) {
+        reader.readAsArrayBuffer(file);
+    } else {
+        reader.readAsText(file);
+    }
+    event.target.value = "";
+}
+
+function parseHtmlTableToData(htmlContent) {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(htmlContent, "text/html");
+    const tables = doc.querySelectorAll("table");
+
+    if (tables.length === 0) {
+        return showToast("Không tìm thấy bảng dữ liệu trong file Word!", "error");
+    }
+    
+    const rows = tables[0].querySelectorAll("tr");
+    let startIndex = 0;
+    if (rows.length > 0) {
+        const firstRowText = rows[0].innerText.toLowerCase();
+        if (firstRowText.includes('cột') || firstRowText.includes('nhóm') || rows[0].querySelectorAll("th").length > 0) {
+            startIndex = 1;
+        }
+    }
+
+    let count = 0;
+
+    if (gameState.type === 'matching') {
+        let newPairs = [];
+        for (let i = startIndex; i < rows.length; i++) {
+            const cells = rows[i].querySelectorAll("td, th");
+            if (cells.length >= 2) {
+                const left = cells[0].innerText.trim();
+                const right = cells[1].innerText.trim();
+                if (left || right) newPairs.push({ id: generateId(), left, right });
+            }
+        }
+        if (newPairs.length > 0) {
+            gameState.content.pairs = gameState.content.pairs.concat(newPairs);
+            count = newPairs.length;
+        }
+    } else if (gameState.type === 'categorize') {
+        for (let i = startIndex; i < rows.length; i++) {
+            const cells = rows[i].querySelectorAll("td, th");
+            if (cells.length >= 2) {
+                const catName = cells[0].innerText.trim();
+                const itemsStr = cells[1].innerText.trim();
+                
+                if (catName) {
+                    const catId = generateId();
+                    gameState.content.categories.push({ id: catId, name: catName });
+                    
+                    if (itemsStr) {
+                        const items = itemsStr.split(',').map(s => s.trim()).filter(s => s !== '');
+                        items.forEach(text => {
+                            gameState.content.items.push({ id: generateId(), text, catId });
+                            count++;
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    if (count > 0 || (gameState.type === 'categorize' && tables[0].rows.length > 1)) {
+        buildEditorUI();
+        showToast("Đã nhập dữ liệu từ file Word thành công!");
+    } else {
+        showToast("Bảng trong file Word không có dữ liệu hợp lệ!", "error");
+    }
+}
+
+// Khởi tạo trạng thái mặc định khi load web
+window.onload = () => {
+    switchScreen('screen-home');
+};
+
+</script>
+</body>
+</html>

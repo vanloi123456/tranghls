@@ -1,0 +1,2284 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PHÒNG TRƯNG BÀY SẢN PHẨM GIÁO DỤC SỐ ỨNG DỤNG AI</title>
+    
+    <!-- Khai báo thư viện ngoài (Yêu cầu kết nối Internet để tải CDN) -->
+    <!-- Tailwind CSS cho giao diện UI hiện đại -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font chữ Inter hỗ trợ tiếng Việt sắc nét -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- Three.js r128 cho đồ họa không gian 3D thực tế -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Tone.js cho hiệu ứng âm thanh tương tác không gian (không dùng link âm thanh ngoài) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.8.49/Tone.js"></script>
+    <!-- FontAwesome Icons cho biểu tượng trực quan -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <style>
+        /* Thiết lập cơ bản và ngăn cuộn trang ngoài ý muốn */
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Inter', sans-serif;
+        }
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #030712; /* Nền tối sâu công nghệ */
+            color: #f8fafc;
+        }
+
+        /* Canvas 3D chiếm toàn bộ màn hình */
+        #canvas-container {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+            touch-action: none; /* Tối ưu thao tác vuốt 3D trên cảm ứng */
+        }
+
+        /* Hiệu ứng kính mờ (Glassmorphism) phong cách Futuristic */
+        .glass-panel {
+            background: rgba(10, 18, 36, 0.78);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            border: 1px solid rgba(56, 189, 248, 0.28);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), inset 0 0 15px rgba(56, 189, 248, 0.08);
+        }
+
+        .glass-btn {
+            background: rgba(15, 23, 42, 0.85);
+            backdrop-filter: blur(8px);
+            border: 1px solid rgba(56, 189, 248, 0.35);
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .glass-btn:hover, .glass-btn:active {
+            background: rgba(14, 165, 233, 0.25);
+            border-color: #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.45);
+            transform: translateY(-1px);
+        }
+        .glass-btn.active {
+            background: linear-gradient(135deg, rgba(2, 132, 199, 0.6), rgba(124, 58, 237, 0.6));
+            border-color: #7dd3fc;
+            box-shadow: 0 0 18px rgba(56, 189, 248, 0.6);
+        }
+
+        /* Thanh cuộn tùy chỉnh cho Modal và Bảng quản trị */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.5);
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(56, 189, 248, 0.4);
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(56, 189, 248, 0.7);
+        }
+
+        /* Hiệu ứng phát sáng chữ tiêu đề */
+        .neon-text {
+            text-shadow: 0 0 12px rgba(56, 189, 248, 0.7), 0 0 24px rgba(139, 92, 246, 0.4);
+        }
+
+        /* Animation nhẹ cho điểm chỉ báo trên MiniMap */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.9; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .pulse-dot::after {
+            content: '';
+            position: absolute;
+            inset: -4px;
+            border-radius: 50%;
+            border: 2px solid #38bdf8;
+            animation: pulse-ring 1.5s infinite;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Vùng chứa không gian 3D Three.js -->
+    <div id="canvas-container"></div>
+
+    <!-- MÀN HÌNH CHÀO MỪNG / CỔNG VÀO TRIỂN LÃM -->
+    <div id="welcome-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/85 backdrop-blur-md p-4 transition-opacity duration-700">
+        <div class="glass-panel max-w-2xl w-full rounded-3xl p-6 sm:p-10 text-center relative overflow-hidden border-cyan-400/40">
+            <!-- Trang trí góc công nghệ -->
+            <div class="absolute top-0 left-0 w-24 h-24 bg-cyan-500/10 rounded-br-full pointer-events-none"></div>
+            <div class="absolute bottom-0 right-0 w-32 h-32 bg-purple-600/10 rounded-tl-full pointer-events-none"></div>
+
+            <!-- Logo Biểu Tượng AI Giáo Dục -->
+            <div class="mx-auto w-20 h-20 rounded-2xl bg-gradient-to-br from-cyan-500 via-blue-600 to-purple-600 p-0.5 shadow-lg shadow-cyan-500/30 mb-5 flex items-center justify-center">
+                <div class="w-full h-full bg-slate-950 rounded-2xl flex items-center justify-center">
+                    <i class="fa-solid fa-atom text-3xl text-cyan-400 animate-spin" style="animation-duration: 12s;"></i>
+                </div>
+            </div>
+
+            <div class="inline-block px-3 py-1 rounded-full bg-cyan-500/15 border border-cyan-400/30 text-cyan-300 text-xs font-semibold tracking-wider uppercase mb-3">
+                Không Gian Triển Lãm Thực Tế Ảo 3D
+            </div>
+
+            <h1 class="text-2xl sm:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-white via-cyan-200 to-purple-300 neon-text leading-tight mb-3">
+                PHÒNG TRƯNG BÀY SẢN PHẨM GIÁO DỤC SỐ ỨNG DỤNG AI
+            </h1>
+
+            <p class="text-sm sm:text-base font-medium text-cyan-300 tracking-widest uppercase mb-6">
+                ✦ SÁNG TẠO – TRẢI NGHIỆM – KẾT NỐI TRI THỨC ✦
+            </p>
+
+            <p class="text-slate-300 text-sm sm:text-base leading-relaxed mb-8 max-w-xl mx-auto">
+                Chào mừng quý thầy cô, các em học sinh và khách tham quan bước vào không gian triển lãm số tương tác 3D. Hãy tự do di chuyển, khám phá 5 phân khu trưng bày công nghệ giáo dục và tương tác trực tiếp với từng sản phẩm.
+            </p>
+
+            <div class="flex flex-col sm:flex-row items-center justify-center gap-4">
+                <button id="btn-start-tour" class="w-full sm:w-auto px-8 py-4 rounded-2xl bg-gradient-to-r from-cyan-500 via-blue-600 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-bold text-base sm:text-lg shadow-lg shadow-cyan-500/30 transition-all transform hover:scale-105 active:scale-95 flex items-center justify-center gap-3 cursor-pointer">
+                    <i class="fa-solid fa-vr-cardboard text-xl"></i>
+                    <span>BẮT ĐẦU THAM QUAN</span>
+                </button>
+            </div>
+
+            <div class="mt-6 pt-4 border-t border-slate-800/80 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-400">
+                <span><i class="fa-solid fa-wifi text-cyan-400 mr-1"></i> Yêu cầu kết nối Internet (Three.js & Tailwind CDN)</span>
+                <span><i class="fa-solid fa-mobile-screen text-purple-400 mr-1"></i> Hỗ trợ Máy tính, Máy tính bảng & Điện thoại</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- GIAO DIỆN ĐIỀU KHIỂN CHÍNH (HUD OVERLAY) -->
+    <div id="hud-interface" class="fixed inset-0 z-10 pointer-events-none flex flex-col justify-between p-2 sm:p-4 opacity-0 transition-opacity duration-500">
+        
+        <!-- 1. THANH TIÊU ĐỀ & MENU PHÍA TRÊN -->
+        <header class="w-full flex flex-col gap-2 pointer-events-auto">
+            <div class="glass-panel rounded-2xl px-3 py-2 sm:px-5 sm:py-3 flex items-center justify-between gap-2">
+                <!-- Logo & Tên Phòng Trưng Bày -->
+                <div class="flex items-center gap-3 min-w-0">
+                    <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-purple-600 flex items-center justify-center shrink-0 shadow-md shadow-cyan-500/20">
+                        <i class="fa-solid fa-cube text-white text-lg"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-xs sm:text-sm md:text-base font-bold text-white truncate">
+                            PHÒNG TRƯNG BÀY SẢN PHẨM GIÁO DỤC SỐ ỨNG DỤNG AI
+                        </h2>
+                        <p class="text-[10px] sm:text-xs text-cyan-300 truncate">
+                            SÁNG TẠO – TRẢI NGHIỆM – KẾT NỐI TRI THỨC
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Các nút chức năng hệ thống -->
+                <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                    <!-- Nút Quản Trị Sản Phẩm -->
+                    <button id="btn-open-admin" title="Quản trị sản phẩm trưng bày" class="glass-btn px-3 py-2 rounded-xl text-xs sm:text-sm font-semibold text-amber-300 border-amber-400/40 flex items-center gap-1.5 cursor-pointer">
+                        <i class="fa-solid fa-sliders"></i>
+                        <span class="hidden md:inline">Quản trị</span>
+                    </button>
+
+                    <!-- Nút Toàn Cảnh -->
+                    <button id="btn-overview" title="Góc nhìn toàn cảnh từ trên cao" class="glass-btn px-3 py-2 rounded-xl text-xs sm:text-sm font-medium text-cyan-200 flex items-center gap-1.5 cursor-pointer">
+                        <i class="fa-solid fa-eye"></i>
+                        <span class="hidden lg:inline">Toàn cảnh</span>
+                    </button>
+
+                    <!-- Nút Trở Về Vị Trí Ban Đầu -->
+                    <button id="btn-reset-pos" title="Trở về cổng chào ban đầu" class="glass-btn p-2 sm:px-3 sm:py-2 rounded-xl text-xs sm:text-sm text-slate-200 flex items-center gap-1.5 cursor-pointer">
+                        <i class="fa-solid fa-house"></i>
+                        <span class="hidden xl:inline">Ban đầu</span>
+                    </button>
+
+                    <!-- Nút Bật/Tắt Âm Thanh -->
+                    <button id="btn-toggle-audio" title="Bật / Tắt âm thanh hiệu ứng" class="glass-btn p-2 rounded-xl text-cyan-300 cursor-pointer w-9 h-9 flex items-center justify-center">
+                        <i id="icon-audio" class="fa-solid fa-volume-high"></i>
+                    </button>
+
+                    <!-- Nút Toàn Màn Hình -->
+                    <button id="btn-fullscreen" title="Toàn màn hình" class="glass-btn p-2 rounded-xl text-slate-200 cursor-pointer w-9 h-9 flex items-center justify-center">
+                        <i id="icon-fullscreen" class="fa-solid fa-expand"></i>
+                    </button>
+
+                    <!-- Nút Hướng Dẫn -->
+                    <button id="btn-help" title="Hướng dẫn tham quan" class="glass-btn p-2 rounded-xl text-purple-300 cursor-pointer w-9 h-9 flex items-center justify-center">
+                        <i class="fa-solid fa-circle-question"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Menu Điều Hướng Nhanh Các Khu Vực -->
+            <nav class="flex items-center gap-1.5 sm:gap-2 overflow-x-auto pb-1 no-scrollbar">
+                <button data-zone="reception" class="zone-nav-btn glass-btn active px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-door-open text-cyan-400"></i> 1. Đón Tiếp
+                </button>
+                <button data-zone="ai_apps" class="zone-nav-btn glass-btn px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-robot text-blue-400"></i> 2. Ứng Dụng AI
+                </button>
+                <button data-zone="games" class="zone-nav-btn glass-btn px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-gamepad text-purple-400"></i> 3. Trò Chơi Tương Tác
+                </button>
+                <button data-zone="materials" class="zone-nav-btn glass-btn px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-book-open text-emerald-400"></i> 4. Học Liệu Số
+                </button>
+                <button data-zone="experiments" class="zone-nav-btn glass-btn px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-flask text-amber-400"></i> 5. Thí Nghiệm 3D
+                </button>
+                <button data-zone="creative" class="zone-nav-btn glass-btn px-3 py-1.5 rounded-xl text-xs font-medium whitespace-nowrap flex items-center gap-1.5 cursor-pointer">
+                    <i class="fa-solid fa-lightbulb text-pink-400"></i> 6. Sản Phẩm Sáng Tạo
+                </button>
+            </nav>
+        </header>
+
+        <!-- Nhãn thông báo khi rê chuột qua vật thể tương tác 3D -->
+        <div id="hover-tooltip" class="fixed pointer-events-none z-30 hidden px-3 py-1.5 rounded-xl glass-panel border-cyan-400 text-xs font-semibold text-white shadow-lg transform -translate-x-1/2 -translate-y-full mt-[-12px]">
+            <span id="hover-tooltip-text">Tên sản phẩm</span>
+        </div>
+
+        <!-- 2. THANH ĐIỀU KHIỂN DI CHUYỂN & MINI MAP PHÍA DƯỚI -->
+        <footer class="w-full flex items-end justify-between gap-2 pointer-events-none">
+            
+            <!-- Bản Đồ Thu Nhỏ (Mini Map) -->
+            <div class="glass-panel rounded-2xl p-2.5 pointer-events-auto flex flex-col items-center gap-1.5">
+                <div class="w-full flex items-center justify-between text-[10px] text-cyan-300 font-semibold px-1">
+                    <span><i class="fa-solid fa-map-location-dot mr-1"></i>BẢN ĐỒ</span>
+                    <span id="current-zone-label" class="text-white">Khu Đón Tiếp</span>
+                </div>
+                <div class="relative rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-950/90">
+                    <canvas id="minimap-canvas" width="150" height="150" class="block w-[120px] h-[120px] sm:w-[150px] sm:h-[150px] cursor-pointer" title="Nhấn vào bản đồ để dịch chuyển nhanh"></canvas>
+                </div>
+            </div>
+
+            <!-- Cụm Phím Điều Hướng D-Pad & Zoom (Hỗ trợ cả chuột & cảm ứng) -->
+            <div class="flex flex-col sm:flex-row items-end sm:items-center gap-2 pointer-events-auto">
+                
+                <!-- Nút Zoom In / Out -->
+                <div class="glass-panel rounded-2xl p-1.5 flex sm:flex-col gap-1.5">
+                    <button id="btn-zoom-in" title="Phóng to góc nhìn" class="glass-btn w-10 h-10 rounded-xl flex items-center justify-center text-cyan-300 active:scale-90 cursor-pointer">
+                        <i class="fa-solid fa-magnifying-glass-plus"></i>
+                    </button>
+                    <button id="btn-zoom-out" title="Thu nhỏ góc nhìn" class="glass-btn w-10 h-10 rounded-xl flex items-center justify-center text-cyan-300 active:scale-90 cursor-pointer">
+                        <i class="fa-solid fa-magnifying-glass-minus"></i>
+                    </button>
+                </div>
+
+                <!-- Bàn Phím Điều Hướng Tiến / Lùi / Trái / Phải -->
+                <div class="glass-panel rounded-2xl p-2 grid grid-cols-3 gap-1.5 w-[136px] h-[136px] sm:w-[148px] sm:h-[148px]">
+                    <div></div>
+                    <button id="move-forward" title="Đi tới (Phím W hoặc Mũi tên lên)" class="glass-btn rounded-xl flex items-center justify-center text-white text-base active:bg-cyan-500/40 cursor-pointer">
+                        <i class="fa-solid fa-chevron-up"></i>
+                    </button>
+                    <div></div>
+
+                    <button id="move-left" title="Sang trái (Phím A hoặc Mũi tên trái)" class="glass-btn rounded-xl flex items-center justify-center text-white text-base active:bg-cyan-500/40 cursor-pointer">
+                        <i class="fa-solid fa-chevron-left"></i>
+                    </button>
+                    <div class="rounded-xl bg-slate-900/60 border border-slate-700/50 flex items-center justify-center text-[10px] text-cyan-400 font-bold">
+                        360°
+                    </div>
+                    <button id="move-right" title="Sang phải (Phím D hoặc Mũi tên phải)" class="glass-btn rounded-xl flex items-center justify-center text-white text-base active:bg-cyan-500/40 cursor-pointer">
+                        <i class="fa-solid fa-chevron-right"></i>
+                    </button>
+
+                    <div></div>
+                    <button id="move-backward" title="Lùi lại (Phím S hoặc Mũi tên xuống)" class="glass-btn rounded-xl flex items-center justify-center text-white text-base active:bg-cyan-500/40 cursor-pointer">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </button>
+                    <div></div>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- MODAL 1: BẢNG THÔNG TIN CHI TIẾT SẢN PHẨM KHI NHẤN VÀO BỤC TRƯNG BÀY -->
+    <div id="product-detail-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+        <div class="glass-panel max-w-2xl w-full rounded-3xl overflow-hidden border-cyan-400/50 shadow-2xl flex flex-col max-h-[90vh]">
+            <!-- Header Modal -->
+            <div class="px-6 py-4 bg-slate-900/90 border-b border-cyan-500/20 flex items-center justify-between">
+                <span id="detail-zone-badge" class="px-3 py-1 rounded-full text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-400/30">
+                    Khu vực trưng bày
+                </span>
+                <button id="btn-close-detail" class="w-9 h-9 rounded-xl glass-btn flex items-center justify-center text-slate-300 hover:text-white cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Nội dung chi tiết -->
+            <div class="p-6 overflow-y-auto space-y-5">
+                <div class="w-full h-56 sm:h-64 rounded-2xl overflow-hidden bg-slate-900 border border-slate-700/70 relative flex items-center justify-center">
+                    <img id="detail-image" src="" alt="Hình ảnh sản phẩm" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/800x450/0f172a/38bdf8?text=S%E1%BA%A3n+Ph%E1%BA%A9m+Gi%C3%A1o+D%E1%BB%A5c+AI'">
+                </div>
+
+                <div>
+                    <h3 id="detail-title" class="text-xl sm:text-2xl font-bold text-white mb-2">Tên sản phẩm</h3>
+                    <p id="detail-desc" class="text-slate-300 text-sm sm:text-base leading-relaxed whitespace-pre-line">
+                        Mô tả chi tiết sản phẩm...
+                    </p>
+                </div>
+
+                <!-- Khung cảnh báo nếu chưa có đường dẫn -->
+                <div id="detail-no-link-notice" class="hidden p-3 rounded-xl bg-amber-500/10 border border-amber-400/30 text-amber-200 text-xs flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation text-amber-400"></i>
+                    <span>Sản phẩm này chưa được gắn đường dẫn trải nghiệm trực tuyến.</span>
+                </div>
+            </div>
+
+            <!-- Footer hành động -->
+            <div class="px-6 py-4 bg-slate-900/90 border-t border-cyan-500/20 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex flex-wrap items-center gap-2">
+                    <button id="btn-back-to-space" class="px-4 py-2.5 rounded-xl glass-btn text-sm font-medium text-slate-200 flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-arrow-left"></i>
+                        <span>Trở về không gian triển lãm</span>
+                    </button>
+
+                    <button id="btn-edit-from-detail" class="px-4 py-2.5 rounded-xl glass-btn border-amber-400/40 text-sm font-semibold text-amber-300 flex items-center gap-2 cursor-pointer">
+                        <i class="fa-solid fa-pen-to-square"></i>
+                        <span>Chỉnh sửa bục này</span>
+                    </button>
+                </div>
+
+                <a id="btn-launch-product" href="#" target="_blank" rel="noopener noreferrer" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-600 hover:from-cyan-400 hover:to-purple-500 text-white font-bold text-sm shadow-lg shadow-cyan-500/25 flex items-center gap-2 transition-transform hover:scale-105">
+                    <span id="btn-launch-text">XEM CHI TIẾT</span>
+                    <i class="fa-solid fa-up-right-from-square"></i>
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: HỆ THỐNG QUẢN TRỊ SẢN PHẨM (CMS) -->
+    <div id="admin-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/85 backdrop-blur-md p-3 sm:p-6">
+        <div class="glass-panel max-w-5xl w-full rounded-3xl overflow-hidden border-amber-400/40 shadow-2xl flex flex-col max-h-[92vh]">
+            
+            <!-- Header Quản Trị -->
+            <div class="px-6 py-4 bg-slate-900/95 border-b border-slate-700/80 flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-400/40 flex items-center justify-center text-amber-300">
+                        <i class="fa-solid fa-toolbox text-lg"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-base sm:text-lg font-bold text-white">QUẢN TRỊ SẢN PHẨM TRƯNG BÀY 3D</h3>
+                        <p class="text-xs text-slate-400">Dữ liệu được lưu trữ tự động trên trình duyệt và đồng bộ trực tiếp lên bục 3D</p>
+                    </div>
+                </div>
+                <button id="btn-close-admin" class="w-9 h-9 rounded-xl glass-btn flex items-center justify-center text-slate-300 hover:text-white cursor-pointer">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <!-- Nội dung chia 2 cột: Form Thêm/Sửa & Danh Sách Sản Phẩm -->
+            <div class="p-4 sm:p-6 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- Cột Trái: Form Nhập Liệu (5 cột) -->
+                <div class="lg:col-span-5 bg-slate-900/70 p-5 rounded-2xl border border-slate-700/70 space-y-4">
+                    <h4 id="form-mode-title" class="text-sm font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-2">
+                        <i class="fa-solid fa-plus-circle"></i> Thêm sản phẩm mới
+                    </h4>
+
+                    <form id="product-form" class="space-y-3.5">
+                        <input type="hidden" id="prod-id" value="">
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Phân khu trưng bày *</label>
+                            <select id="prod-zone" required class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-cyan-400 focus:outline-none">
+                                <option value="ai_apps">Khu 2: Ứng Dụng AI (Gemini / AI Studio)</option>
+                                <option value="games">Khu 3: Trò Chơi Tương Tác Học Tập</option>
+                                <option value="materials">Khu 4: Học Liệu Số & Bài Giảng</option>
+                                <option value="experiments">Khu 5: Thí Nghiệm & Mô Phỏng 3D</option>
+                                <option value="creative">Khu 6: Sản Phẩm Sáng Tạo Khác</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Tên sản phẩm *</label>
+                            <input type="text" id="prod-name" required placeholder="Nhập tên sản phẩm giáo dục..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-cyan-400 focus:outline-none">
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Mô tả ngắn / Giới thiệu *</label>
+                            <textarea id="prod-desc" rows="3" required placeholder="Nhập mô tả chức năng, đối tượng học sinh..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-cyan-400 focus:outline-none"></textarea>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Hình ảnh đại diện (URL hoặc tải ảnh từ máy)</label>
+                            <input type="url" id="prod-img-url" placeholder="https://..." class="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-cyan-400 focus:outline-none mb-2">
+                            <div class="flex items-center gap-2">
+                                <label class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-xs text-cyan-300 cursor-pointer flex items-center gap-1.5">
+                                    <i class="fa-solid fa-upload"></i> Chọn tệp ảnh từ máy
+                                    <input type="file" id="prod-img-file" accept="image/*" class="hidden">
+                                </label>
+                                <span id="file-upload-status" class="text-[11px] text-slate-400 truncate">Chưa chọn tệp</span>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="block text-xs font-medium text-slate-300 mb-1">Đường dẫn sản phẩm / Ứng dụng / Video (URL)</label>
+                            <input type="url" id="prod-link" placeholder="https://aistudio.google.com/..." class="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-sm text-white focus:border-cyan-400 focus:outline-none">
+                        </div>
+
+                        <div class="pt-2 flex items-center gap-2">
+                            <button type="submit" class="flex-1 py-2.5 px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-bold text-sm shadow-md cursor-pointer">
+                                <i class="fa-solid fa-floppy-disk mr-1"></i> Lưu Lên Kệ 3D
+                            </button>
+                            <button type="button" id="btn-cancel-edit" class="hidden py-2.5 px-4 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-sm font-medium cursor-pointer">
+                                Hủy
+                            </button>
+                        </div>
+                    </form>
+                </div>
+
+                <!-- Cột Phải: Danh Sách & Sắp Xếp Sản Phẩm (7 cột) -->
+                <div class="lg:col-span-7 flex flex-col gap-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <h4 class="text-sm font-bold text-white uppercase tracking-wider">
+                            Danh sách sản phẩm hiện có (<span id="total-prod-count" class="text-cyan-400">0</span>)
+                        </h4>
+                        <div class="flex items-center gap-2">
+                            <select id="filter-admin-zone" class="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-xs text-slate-200 focus:outline-none">
+                                <option value="all">Tất cả các khu vực</option>
+                                <option value="ai_apps">Khu 2: Ứng Dụng AI</option>
+                                <option value="games">Khu 3: Trò Chơi Tương Tác</option>
+                                <option value="materials">Khu 4: Học Liệu Số</option>
+                                <option value="experiments">Khu 5: Thí Nghiệm 3D</option>
+                                <option value="creative">Khu 6: Sản Phẩm Sáng Tạo</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Trạng thái trống ban đầu theo đúng yêu cầu -->
+                    <div id="admin-empty-state" class="flex-1 min-h-[260px] rounded-2xl border-2 border-dashed border-slate-700/80 bg-slate-900/40 flex flex-col items-center justify-center p-6 text-center">
+                        <div class="w-14 h-14 rounded-2xl bg-slate-800/80 flex items-center justify-center text-slate-500 mb-3">
+                            <i class="fa-solid fa-box-open text-2xl"></i>
+                        </div>
+                        <p class="text-sm font-semibold text-slate-300 mb-1">Thư viện sản phẩm đang trống</p>
+                        <p class="text-xs text-slate-400 max-w-sm">
+                            Các bục trưng bày trong không gian 3D đã sẵn sàng. Hãy sử dụng biểu mẫu bên trái để thêm sản phẩm giáo dục thực tế của bạn.
+                        </p>
+                    </div>
+
+                    <!-- Danh sách các thẻ sản phẩm -->
+                    <div id="admin-product-list" class="space-y-2.5 max-h-[420px] overflow-y-auto pr-1 hidden">
+                        <!-- Render động bằng JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 3: HƯỚNG DẪN SỬ DỤNG & THÔNG TIN KỸ THUẬT -->
+    <div id="help-modal" class="fixed inset-0 z-40 hidden items-center justify-center bg-slate-950/80 backdrop-blur-md p-4">
+        <div class="glass-panel max-w-xl w-full rounded-3xl overflow-hidden border-purple-400/40 shadow-2xl">
+            <div class="px-6 py-4 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+                <h3 class="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-compass text-cyan-400"></i> HƯỚNG DẪN THAM QUAN & SỬ DỤNG
+                </h3>
+                <button id="btn-close-help" class="w-9 h-9 rounded-xl glass-btn flex items-center justify-center text-slate-300 cursor-pointer">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4 text-sm text-slate-300 max-h-[75vh] overflow-y-auto">
+                <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-cyan-500/20 space-y-2">
+                    <h4 class="font-bold text-cyan-300"><i class="fa-solid fa-street-view mr-1.5"></i>1. Cách di chuyển trong không gian 3D</h4>
+                    <ul class="list-disc list-inside space-y-1 text-xs sm:text-sm text-slate-300">
+                        <li><strong>Xoay góc nhìn 360°:</strong> Nhấn giữ chuột trái (hoặc chạm 1 ngón tay trên điện thoại) và kéo sang trái/phải/lên/xuống.</li>
+                        <li><strong>Di chuyển bước đi:</strong> Dùng phím <kbd class="px-1.5 py-0.5 bg-slate-800 rounded text-cyan-300">W A S D</kbd>, phím mũi tên, hoặc cụm nút điều hướng góc phải màn hình.</li>
+                        <li><strong>Phóng to / Thu nhỏ:</strong> Lăn con lăn chuột hoặc nhấn nút <i class="fa-solid fa-magnifying-glass-plus text-cyan-300"></i> / <i class="fa-solid fa-magnifying-glass-minus text-cyan-300"></i>.</li>
+                        <li><strong>Dịch chuyển nhanh:</strong> Nhấn vào tên từng khu vực trên thanh menu phía trên hoặc nhấn trực tiếp vào <strong>Bản đồ thu nhỏ (Mini Map)</strong> góc trái dưới.</li>
+                    </ul>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-purple-500/20 space-y-2">
+                    <h4 class="font-bold text-purple-300"><i class="fa-solid fa-hand-pointer mr-1.5"></i>2. Tương tác với sản phẩm trưng bày</h4>
+                    <p class="text-xs sm:text-sm">
+                        Di chuyển đến gần các bục trưng bày trong từng khu vực. Khi rê chuột vào màn hình hiển thị trên bục, khung viền sẽ phát sáng. Nhấn chuột (hoặc chạm) vào bục để mở bảng thông tin chi tiết và trải nghiệm sản phẩm.
+                    </p>
+                </div>
+
+                <div class="p-3.5 rounded-2xl bg-slate-900/80 border border-amber-500/20 space-y-2">
+                    <h4 class="font-bold text-amber-300"><i class="fa-solid fa-sliders mr-1.5"></i>3. Dành cho Quản trị viên & Giáo viên</h4>
+                    <p class="text-xs sm:text-sm">
+                        Nhấn nút <strong>Quản trị</strong> trên thanh tiêu đề để thêm mới, chỉnh sửa, sắp xếp thứ tự hoặc xóa sản phẩm theo từng khu vực. Hệ thống tự động dựng mô hình màn hình trưng bày 3D tương ứng ngay lập tức (hỗ trợ thêm nhiều sản phẩm trên mỗi phân khu, tự động xếp thành nhiều hàng khoa học).
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- HỘP THÔNG BÁO TOAST THAY THẾ ALERT() -->
+    <div id="toast-box" class="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 pointer-events-none transition-all duration-300 opacity-0 translate-y-[-10px]">
+        <div class="glass-panel px-4 py-2.5 rounded-2xl border-cyan-400 text-xs sm:text-sm font-medium text-white shadow-xl flex items-center gap-2">
+            <i id="toast-icon" class="fa-solid fa-circle-info text-cyan-400"></i>
+            <span id="toast-message">Thông báo</span>
+        </div>
+    </div>
+
+    <!-- MÃ NGUỒN JAVASCRIPT XỬ LÝ KHÔNG GIAN 3D, ÂM THANH & QUẢN TRỊ -->
+    <script>
+        /**
+         * ============================================================================
+         * PHÒNG TRƯNG BÀY SẢN PHẨM GIÁO DỤC SỐ ỨNG DỤNG AI
+         * Kiến trúc ứng dụng:
+         * 1. State & Storage Manager: Quản lý dữ liệu sản phẩm (mặc định trống hoàn toàn).
+         * 2. Sound Synthesizer (Tone.js): Tạo âm thanh phản hồi không gian tinh tế.
+         * 3. 3D Exhibition Engine (Three.js): Dựng kiến trúc phòng triển lãm, ánh sáng,
+         *    sàn phản chiếu, cổng chào, 5 khu trưng bày và bục sản phẩm động.
+         * 4. Navigation & MiniMap Controller: Điều khiển góc nhìn 360, di chuyển mượt,
+         *    va chạm tường và bản đồ định vị trực quan.
+         * 5. Admin CMS & UI Controller: Xử lý thêm/sửa/xóa/sắp xếp và hiển thị chi tiết.
+         * ============================================================================
+         */
+
+        // --- 1. CẤU HÌNH KHU VỰC TRIỂN LÃM & DỮ LIỆU ---
+        const STORAGE_KEY = 'ai_edu_3d_exhibition_products_v1';
+
+        // Định nghĩa tọa độ 3D và thông tin 6 khu vực trong phòng triển lãm
+        const EXHIBITION_ZONES = {
+            reception: {
+                id: 'reception',
+                name: '1. Khu Đón Tiếp',
+                shortName: 'Đón Tiếp',
+                color: '#38bdf8', // Cyan
+                hex: 0x38bdf8,
+                camPos: { x: 0, y: 2.2, z: 24 },
+                lookAt: { x: 0, y: 2.2, z: 10 },
+                mapPos: { x: 0, z: 22 }
+            },
+            ai_apps: {
+                id: 'ai_apps',
+                name: '2. Khu Ứng Dụng AI',
+                shortName: 'Ứng Dụng AI',
+                actionLabel: 'XEM CHI TIẾT',
+                color: '#3b82f6', // Blue
+                hex: 0x3b82f6,
+                camPos: { x: -8, y: 2.2, z: 8 },
+                lookAt: { x: -18, y: 2.0, z: 8 },
+                mapPos: { x: -16, z: 8 }
+            },
+            games: {
+                id: 'games',
+                name: '3. Khu Trò Chơi Tương Tác',
+                shortName: 'Trò Chơi',
+                actionLabel: 'CHƠI NGAY',
+                color: '#a855f7', // Purple
+                hex: 0xa855f7,
+                camPos: { x: 8, y: 2.2, z: 8 },
+                lookAt: { x: 18, y: 2.0, z: 8 },
+                mapPos: { x: 16, z: 8 }
+            },
+            materials: {
+                id: 'materials',
+                name: '4. Khu Học Liệu Số',
+                shortName: 'Học Liệu Số',
+                actionLabel: 'MỞ HỌC LIỆU',
+                color: '#10b981', // Emerald
+                hex: 0x10b981,
+                camPos: { x: -8, y: 2.2, z: -8 },
+                lookAt: { x: -18, y: 2.0, z: -8 },
+                mapPos: { x: -16, z: -8 }
+            },
+            experiments: {
+                id: 'experiments',
+                name: '5. Khu Thí Nghiệm & Mô Phỏng 3D',
+                shortName: 'Thí Nghiệm 3D',
+                actionLabel: 'TRẢI NGHIỆM 3D',
+                color: '#f59e0b', // Amber
+                hex: 0xf59e0b,
+                camPos: { x: 8, y: 2.2, z: -8 },
+                lookAt: { x: 18, y: 2.0, z: -8 },
+                mapPos: { x: 16, z: -8 }
+            },
+            creative: {
+                id: 'creative',
+                name: '6. Khu Sản Phẩm Sáng Tạo',
+                shortName: 'Sáng Tạo',
+                actionLabel: 'KHÁM PHÁ',
+                color: '#ec4899', // Pink
+                hex: 0xec4899,
+                camPos: { x: 0, y: 2.2, z: -13 },
+                lookAt: { x: 0, y: 2.2, z: -24 },
+                mapPos: { x: 0, z: -22 }
+            }
+        };
+
+        // Danh sách sản phẩm (Khởi tạo trống hoàn toàn theo đúng yêu cầu)
+        let products = [];
+
+        // Tải dữ liệu do người quản trị đã lưu trước đó (nếu có)
+        function loadProductsFromStorage() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (raw) {
+                    const parsed = JSON.parse(raw);
+                    if (Array.isArray(parsed)) {
+                        products = parsed;
+                    }
+                }
+            } catch (err) {
+                console.error('Lỗi đọc dữ liệu lưu trữ:', err);
+                products = [];
+            }
+        }
+
+        function saveProductsToStorage() {
+            try {
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(products));
+            } catch (err) {
+                showToast('Bộ nhớ trình duyệt đầy, hãy dùng link ảnh thay vì tải tệp quá lớn!', 'error');
+            }
+        }
+
+        // --- 2. HỆ THỐNG ÂM THANH TƯƠNG TÁC (TONE.JS) ---
+        let audioEnabled = true;
+        let synth = null;
+
+        function initAudio() {
+            try {
+                if (typeof Tone !== 'undefined' && !synth) {
+                    synth = new Tone.PolySynth(Tone.Synth, {
+                        oscillator: { type: 'sine' },
+                        envelope: { attack: 0.02, decay: 0.15, sustain: 0.05, release: 0.4 }
+                    }).toDestination();
+                    synth.volume.value = -14;
+                }
+            } catch (e) {
+                console.warn('Trình duyệt chưa kích hoạt âm thanh:', e);
+            }
+        }
+
+        function playSoundEffect(type) {
+            if (!audioEnabled || typeof Tone === 'undefined') return;
+            try {
+                if (Tone.context.state !== 'running') {
+                    Tone.start();
+                }
+                if (!synth) initAudio();
+                if (!synth) return;
+
+                if (type === 'click') {
+                    synth.triggerAttackRelease('C5', '32n');
+                } else if (type === 'enter') {
+                    synth.triggerAttackRelease(['C4', 'E4', 'G4', 'B4'], '8n');
+                } else if (type === 'hover') {
+                    synth.triggerAttackRelease('G5', '64n');
+                } else if (type === 'teleport') {
+                    synth.triggerAttackRelease(['D4', 'A4'], '16n');
+                }
+            } catch (e) {
+                // Bỏ qua lỗi âm thanh nếu người dùng chưa tương tác
+            }
+        }
+
+        // Hàm hiển thị thông báo thay thế alert()
+        let toastTimeout = null;
+        function showToast(msg, type = 'info') {
+            const box = document.getElementById('toast-box');
+            const text = document.getElementById('toast-message');
+            const icon = document.getElementById('toast-icon');
+
+            text.textContent = msg;
+            if (type === 'error') {
+                icon.className = 'fa-solid fa-circle-exclamation text-rose-400';
+            } else if (type === 'success') {
+                icon.className = 'fa-solid fa-circle-check text-emerald-400';
+            } else {
+                icon.className = 'fa-solid fa-circle-info text-cyan-400';
+            }
+
+            box.classList.remove('opacity-0', 'translate-y-[-10px]');
+            box.classList.add('opacity-100', 'translate-y-0');
+
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                box.classList.remove('opacity-100', 'translate-y-0');
+                box.classList.add('opacity-0', 'translate-y-[-10px]');
+            }, 3000);
+        }
+
+        // --- 3. KHỞI TẠO KHÔNG GIAN 3D THREE.JS ---
+        let scene, camera, renderer, raycaster, mouse;
+        // Nhóm sản phẩm động
+        let dynamicProductGroup = null; // Nhóm chứa các bục sản phẩm được tạo động
+        let dynamicCarpetGroup = null;  // Nhóm chứa thảm sáng tự động co giãn theo số lượng sản phẩm
+        let interactiveMeshes = [];     // Danh sách các màn hình bục trưng bày có thể tương tác
+        let animatedObjects = [];       // Các vật thể trang trí chuyển động (vòng hologram, hạt ánh sáng...)
+        let hoveredObject = null;
+
+        // Trạng thái điều khiển Camera & Di chuyển
+        const playerState = {
+            pos: new THREE.Vector3(0, 2.2, 26),
+            yaw: 0,       // Góc xoay ngang (radian)
+            pitch: 0,     // Góc ngẩng/cúi (radian)
+            fov: 60,
+            isOverview: false,
+            targetPos: null,
+            targetYaw: null,
+            targetPitch: null
+        };
+
+        // Trạng thái phím bấm & nút điều hướng
+        const moveInput = {
+            forward: false,
+            backward: false,
+            left: false,
+            right: false
+        };
+
+        // Giới hạn không gian phòng (m)
+        const ROOM_BOUNDS = {
+            minX: -22.5,
+            maxX: 22.5,
+            minZ: -25.5,
+            maxZ: 26.5
+        };
+
+        // Hàm tạo Texture chữ / bảng hiệu chất lượng cao bằng HTML5 Canvas
+        function createTextTexture(options) {
+            const {
+                width = 1024,
+                height = 512,
+                bgColor = '#091326',
+                borderColor = '#38bdf8',
+                title = '',
+                subtitle = '',
+                badge = '',
+                titleColor = '#ffffff',
+                subtitleColor = '#7dd3fc',
+                titleSize = 54,
+                subtitleSize = 28
+            } = options;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            // Nền gradient công nghệ
+            const grad = ctx.createLinearGradient(0, 0, width, height);
+            grad.addColorStop(0, bgColor);
+            grad.addColorStop(1, '#030712');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, width, height);
+
+            // Lưới công nghệ mờ
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.08)';
+            ctx.lineWidth = 2;
+            for (let x = 0; x < width; x += 64) {
+                ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, height); ctx.stroke();
+            }
+            for (let y = 0; y < height; y += 64) {
+                ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(width, y); ctx.stroke();
+            }
+
+            // Viền phát sáng
+            ctx.strokeStyle = borderColor;
+            ctx.lineWidth = 10;
+            ctx.strokeRect(14, 14, width - 28, height - 28);
+
+            // Góc trang trí
+            ctx.fillStyle = borderColor;
+            ctx.fillRect(14, 14, 60, 16);
+            ctx.fillRect(width - 74, height - 30, 60, 16);
+
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+
+            let centerY = height / 2;
+
+            if (badge) {
+                ctx.font = 'bold 24px Inter, sans-serif';
+                ctx.fillStyle = borderColor;
+                ctx.fillText(badge.toUpperCase(), width / 2, centerY - 95);
+            }
+
+            if (title) {
+                ctx.font = `800 ${titleSize}px Inter, sans-serif`;
+                ctx.fillStyle = titleColor;
+                ctx.shadowColor = borderColor;
+                ctx.shadowBlur = 18;
+                wrapCanvasText(ctx, title, width / 2, subtitle ? centerY - 15 : centerY, width - 100, titleSize * 1.25);
+                ctx.shadowBlur = 0;
+            }
+
+            if (subtitle) {
+                ctx.font = `500 ${subtitleSize}px Inter, sans-serif`;
+                ctx.fillStyle = subtitleColor;
+                wrapCanvasText(ctx, subtitle, width / 2, centerY + 85, width - 120, subtitleSize * 1.3);
+            }
+
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.anisotropy = 4;
+            return texture;
+        }
+
+        function wrapCanvasText(ctx, text, x, y, maxWidth, lineHeight) {
+            const words = text.split(' ');
+            let line = '';
+            const lines = [];
+
+            for (let n = 0; n < words.length; n++) {
+                const testLine = line + words[n] + ' ';
+                const metrics = ctx.measureText(testLine);
+                if (metrics.width > maxWidth && n > 0) {
+                    lines.push(line.trim());
+                    line = words[n] + ' ';
+                } else {
+                    line = testLine;
+                }
+            }
+            lines.push(line.trim());
+
+            const startY = y - ((lines.length - 1) * lineHeight) / 2;
+            lines.forEach((l, i) => {
+                ctx.fillText(l, x, startY + i * lineHeight);
+            });
+        }
+
+        function init3DScene() {
+            const container = document.getElementById('canvas-container');
+
+            // 1. Scene & Sương mù chiều sâu
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x04091a);
+            scene.fog = new THREE.FogExp2(0x04091a, 0.014);
+
+            // 2. Camera góc nhìn người tham quan
+            camera = new THREE.PerspectiveCamera(playerState.fov, window.innerWidth / window.innerHeight, 0.1, 150);
+            camera.position.copy(playerState.pos);
+
+            // 3. Renderer chất lượng cao
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.toneMapping = THREE.ACESFilmicToneMapping;
+            renderer.toneMappingExposure = 1.15;
+            container.appendChild(renderer.domElement);
+
+            // 4. Raycaster cho tương tác chuột / chạm
+            raycaster = new THREE.Raycaster();
+            mouse = new THREE.Vector2();
+
+            // 5. Xây dựng hệ thống ánh sáng, kiến trúc phòng và các khu vực
+            buildLighting();
+            buildArchitecture();
+            buildReceptionGate();
+            buildZoneHeadersAndDecor();
+
+            // 6. Nhóm sản phẩm động
+            dynamicCarpetGroup = new THREE.Group();
+            scene.add(dynamicCarpetGroup);
+
+            dynamicProductGroup = new THREE.Group();
+            scene.add(dynamicProductGroup);
+            rebuildProductDisplays();
+
+            // 7. Cài đặt sự kiện điều khiển
+            setupControls();
+        }
+
+        // Hệ thống ánh sáng công nghệ tương lai
+        function buildLighting() {
+            // Ánh sáng môi trường dịu
+            const ambient = new THREE.AmbientLight(0x93c5fd, 0.55);
+            scene.add(ambient);
+
+            // Ánh sáng bán cầu (Trần xanh cyan - Sàn phản chiếu tím xanh)
+            const hemiLight = new THREE.HemisphereLight(0x38bdf8, 0x1e1b4b, 0.65);
+            scene.add(hemiLight);
+
+            // Các cụm đèn trần rọi xuống từng khu vực
+            const lightPositions = [
+                { x: 0, y: 8.5, z: 20, color: 0x38bdf8, intensity: 1.4 },   // Đón tiếp
+                { x: -14, y: 8.5, z: 8, color: 0x60a5fa, intensity: 1.3 },  // Ứng dụng AI
+                { x: 14, y: 8.5, z: 8, color: 0xc084fc, intensity: 1.3 },   // Trò chơi
+                { x: -14, y: 8.5, z: -8, color: 0x34d399, intensity: 1.3 }, // Học liệu số
+                { x: 14, y: 8.5, z: -8, color: 0xfbbf24, intensity: 1.3 },  // Thí nghiệm
+                { x: 0, y: 8.5, z: -20, color: 0xf472b6, intensity: 1.4 },  // Sáng tạo
+                { x: 0, y: 9.0, z: 0, color: 0xe0f2fe, intensity: 1.5 }     // Trung tâm
+            ];
+
+            lightPositions.forEach(lp => {
+                const pointLight = new THREE.PointLight(lp.color, lp.intensity, 28);
+                pointLight.position.set(lp.x, lp.y, lp.z);
+                scene.add(pointLight);
+            });
+        }
+
+        // Xây dựng sàn phản chiếu nhẹ, tường bao, cột LED và trần nhà
+        function buildArchitecture() {
+            const roomW = 48;
+            const roomD = 56;
+            const roomH = 10;
+
+            // --- SÀN NHÀ CÓ HIỆU ỨNG PHẢN CHIẾU NHẸ & LƯỚI CÔNG NGHỆ ---
+            // Tạo texture gạch phản chiếu
+            const floorCanvas = document.createElement('canvas');
+            floorCanvas.width = 512;
+            floorCanvas.height = 512;
+            const fCtx = floorCanvas.getContext('2d');
+            fCtx.fillStyle = '#070d1f';
+            fCtx.fillRect(0, 0, 512, 512);
+            fCtx.strokeStyle = 'rgba(56, 189, 248, 0.22)';
+            fCtx.lineWidth = 3;
+            fCtx.strokeRect(2, 2, 508, 508);
+            fCtx.strokeStyle = 'rgba(139, 92, 246, 0.1)';
+            fCtx.lineWidth = 1;
+            fCtx.beginPath();
+            fCtx.moveTo(256, 0); fCtx.lineTo(256, 512);
+            fCtx.moveTo(0, 256); fCtx.lineTo(512, 256);
+            fCtx.stroke();
+
+            const floorTex = new THREE.CanvasTexture(floorCanvas);
+            floorTex.wrapS = THREE.RepeatWrapping;
+            floorTex.wrapT = THREE.RepeatWrapping;
+            floorTex.repeat.set(16, 18);
+
+            const floorMat = new THREE.MeshStandardMaterial({
+                map: floorTex,
+                roughness: 0.18, // Bề mặt bóng tạo phản chiếu ánh đèn đẹp mắt
+                metalness: 0.65
+            });
+            const floorMesh = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomD), floorMat);
+            floorMesh.rotation.x = -Math.PI / 2;
+            floorMesh.receiveShadow = true;
+            scene.add(floorMesh);
+
+            // Đường dẫn LED phát sáng trên sàn nối các khu vực
+            const ledMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            const mainPathLeft = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 44), ledMat);
+            mainPathLeft.rotation.x = -Math.PI / 2;
+            mainPathLeft.position.set(-2.5, 0.01, 0);
+            scene.add(mainPathLeft);
+
+            const mainPathRight = new THREE.Mesh(new THREE.PlaneGeometry(0.18, 44), ledMat);
+            mainPathRight.rotation.x = -Math.PI / 2;
+            mainPathRight.position.set(2.5, 0.01, 0);
+            scene.add(mainPathRight);
+
+            // --- TƯỜNG BAO QUANH PHÒNG ---
+            const wallMat = new THREE.MeshStandardMaterial({
+                color: 0x0b132b,
+                roughness: 0.45,
+                metalness: 0.4
+            });
+
+            // Tường sau (Khu Sáng tạo)
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, roomH, 0.5), wallMat);
+            backWall.position.set(0, roomH / 2, -roomD / 2);
+            scene.add(backWall);
+
+            // Tường trước (Sau cổng đón tiếp)
+            const frontWall = new THREE.Mesh(new THREE.BoxGeometry(roomW, roomH, 0.5), wallMat);
+            frontWall.position.set(0, roomH / 2, roomD / 2);
+            scene.add(frontWall);
+
+            // Tường trái
+            const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, roomH, roomD), wallMat);
+            leftWall.position.set(-roomW / 2, roomH / 2, 0);
+            scene.add(leftWall);
+
+            // Tường phải
+            const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.5, roomH, roomD), wallMat);
+            rightWall.position.set(roomW / 2, roomH / 2, 0);
+            scene.add(rightWall);
+
+            // Dải đèn LED chạy dọc chân tường và đỉnh tường
+            const stripMatCyan = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            const stripMatPurple = new THREE.MeshBasicMaterial({ color: 0x8b5cf6 });
+
+            [-roomW / 2 + 0.3, roomW / 2 - 0.3].forEach(xPos => {
+                const sideStripTop = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.15, roomD - 1), stripMatCyan);
+                sideStripTop.position.set(xPos, roomH - 0.5, 0);
+                scene.add(sideStripTop);
+
+                const sideStripBot = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, roomD - 1), stripMatPurple);
+                sideStripBot.position.set(xPos, 0.1, 0);
+                scene.add(sideStripBot);
+            });
+
+            // --- TRẦN NHÀ HIỆN ĐẠI VỚI CÁC THANH ĐÈN LED ---
+            const ceilingMat = new THREE.MeshStandardMaterial({
+                color: 0x050a18,
+                roughness: 0.6,
+                metalness: 0.5
+            });
+            const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(roomW, roomD), ceilingMat);
+            ceiling.rotation.x = Math.PI / 2;
+            ceiling.position.y = roomH;
+            scene.add(ceiling);
+
+            // Các dải đèn trần phát sáng
+            for (let z = -22; z <= 22; z += 7.3) {
+                const beam = new THREE.Mesh(
+                    new THREE.BoxGeometry(36, 0.15, 0.35),
+                    new THREE.MeshBasicMaterial({ color: z % 2 === 0 ? 0x38bdf8 : 0x818cf8 })
+                );
+                beam.position.set(0, roomH - 0.1, z);
+                scene.add(beam);
+            }
+
+            // --- HỆ THỐNG HẠT ÁNH SÁNG LƠ LỬNG TẠO CHIỀU SÂU ---
+            const particleCount = 260;
+            const pGeo = new THREE.BufferGeometry();
+            const pPos = new Float32Array(particleCount * 3);
+            for (let i = 0; i < particleCount * 3; i += 3) {
+                pPos[i] = (Math.random() - 0.5) * 44;
+                pPos[i + 1] = Math.random() * 8.5 + 0.5;
+                pPos[i + 2] = (Math.random() - 0.5) * 50;
+            }
+            pGeo.setAttribute('position', new THREE.BufferAttribute(pPos, 3));
+            const pMat = new THREE.PointsMaterial({
+                color: 0x7dd3fc,
+                size: 0.14,
+                transparent: true,
+                opacity: 0.65
+            });
+            const particles = new THREE.Points(pGeo, pMat);
+            scene.add(particles);
+            animatedObjects.push({ mesh: particles, type: 'particles' });
+        }
+
+        // Khu 1: Cổng chào 3D hiện đại & Biểu tượng trung tâm
+        function buildReceptionGate() {
+            const gateGroup = new THREE.Group();
+            gateGroup.position.set(0, 0, 17);
+
+            // Hai trụ cổng công nghệ
+            const pillarGeo = new THREE.BoxGeometry(0.9, 6.2, 1.2);
+            const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.2 });
+
+            const leftPillar = new THREE.Mesh(pillarGeo, pillarMat);
+            leftPillar.position.set(-5.5, 3.1, 0);
+            gateGroup.add(leftPillar);
+
+            const rightPillar = new THREE.Mesh(pillarGeo, pillarMat);
+            rightPillar.position.set(5.5, 3.1, 0);
+            gateGroup.add(rightPillar);
+
+            // Viền LED trụ cổng
+            const neonMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+            const leftNeon = new THREE.Mesh(new THREE.BoxGeometry(0.15, 6.0, 1.26), neonMat);
+            leftNeon.position.set(-5.0, 3.1, 0);
+            gateGroup.add(leftNeon);
+
+            const rightNeon = new THREE.Mesh(new THREE.BoxGeometry(0.15, 6.0, 1.26), neonMat);
+            rightNeon.position.set(5.0, 3.1, 0);
+            gateGroup.add(rightNeon);
+
+            // Bảng tên lớn phía trên cổng chào
+            const bannerTex = createTextTexture({
+                width: 1400,
+                height: 360,
+                bgColor: '#071226',
+                borderColor: '#38bdf8',
+                badge: 'CHÀO MỪNG ĐẾN VỚI TRIỂN LÃM 3D',
+                title: 'PHÒNG TRƯNG BÀY SẢN PHẨM GIÁO DỤC SỐ ỨNG DỤNG AI',
+                subtitle: 'SÁNG TẠO – TRẢI NGHIỆM – KẾT NỐI TRI THỨC',
+                titleSize: 44,
+                subtitleSize: 26
+            });
+
+            const bannerMesh = new THREE.Mesh(
+                new THREE.BoxGeometry(12.2, 2.6, 0.4),
+                new THREE.MeshBasicMaterial({ map: bannerTex })
+            );
+            bannerMesh.position.set(0, 6.6, 0);
+            gateGroup.add(bannerMesh);
+
+            scene.add(gateGroup);
+
+            // --- BIỂU TƯỢNG HOLOGRAM TRUNG TÂM PHÒNG TRIỂN LÃM (Tọa độ 0, 0, 0) ---
+            const centerHub = new THREE.Group();
+            centerHub.position.set(0, 0, 0);
+
+            // Bệ tròn trung tâm
+            const baseDisk = new THREE.Mesh(
+                new THREE.CylinderGeometry(3.2, 3.6, 0.35, 36),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.85, roughness: 0.2 })
+            );
+            baseDisk.position.y = 0.175;
+            centerHub.add(baseDisk);
+
+            const ringLed = new THREE.Mesh(
+                new THREE.TorusGeometry(3.4, 0.07, 16, 64),
+                new THREE.MeshBasicMaterial({ color: 0x38bdf8 })
+            );
+            ringLed.rotation.x = Math.PI / 2;
+            ringLed.position.y = 0.36;
+            centerHub.add(ringLed);
+
+            // Khối cầu tri thức AI xoay lơ lửng
+            const coreIco = new THREE.Mesh(
+                new THREE.IcosahedronGeometry(1.15, 1),
+                new THREE.MeshStandardMaterial({
+                    color: 0x38bdf8,
+                    emissive: 0x0284c7,
+                    emissiveIntensity: 0.8,
+                    wireframe: true
+                })
+            );
+            coreIco.position.y = 2.6;
+            centerHub.add(coreIco);
+
+            const innerCore = new THREE.Mesh(
+                new THREE.OctahedronGeometry(0.65, 0),
+                new THREE.MeshStandardMaterial({
+                    color: 0xc084fc,
+                    emissive: 0x9333ea,
+                    emissiveIntensity: 1.0
+                })
+            );
+            innerCore.position.y = 2.6;
+            centerHub.add(innerCore);
+
+            // Vòng quỹ đạo xoay quanh khối cầu
+            const orbitRing = new THREE.Mesh(
+                new THREE.TorusGeometry(1.8, 0.04, 12, 48),
+                new THREE.MeshBasicMaterial({ color: 0xa855f7 })
+            );
+            orbitRing.position.y = 2.6;
+            orbitRing.rotation.x = Math.PI / 3;
+            centerHub.add(orbitRing);
+
+            animatedObjects.push({ mesh: coreIco, type: 'spinY', speed: 0.008 });
+            animatedObjects.push({ mesh: innerCore, type: 'spinReverse', speed: 0.015 });
+            animatedObjects.push({ mesh: orbitRing, type: 'orbit', speed: 0.012 });
+
+            scene.add(centerHub);
+        }
+
+        // Biển chỉ dẫn & Vách phân khu cho 5 khu trưng bày
+        function buildZoneHeadersAndDecor() {
+            const zoneConfigs = [
+                {
+                    zone: EXHIBITION_ZONES.ai_apps,
+                    pos: { x: -23.4, y: 5.5, z: 8 },
+                    rotY: Math.PI / 2,
+                    subtitle: 'Ứng dụng tạo bởi Gemini & Google AI Studio'
+                },
+                {
+                    zone: EXHIBITION_ZONES.games,
+                    pos: { x: 23.4, y: 5.5, z: 8 },
+                    rotY: -Math.PI / 2,
+                    subtitle: 'Trò chơi học tập & Tương tác thông minh'
+                },
+                {
+                    zone: EXHIBITION_ZONES.materials,
+                    pos: { x: -23.4, y: 5.5, z: -8 },
+                    rotY: Math.PI / 2,
+                    subtitle: 'Bài giảng điện tử, Video & Tài nguyên số'
+                },
+                {
+                    zone: EXHIBITION_ZONES.experiments,
+                    pos: { x: 23.4, y: 5.5, z: -8 },
+                    rotY: -Math.PI / 2,
+                    subtitle: 'Thí nghiệm khoa học ảo & Mô phỏng trực quan'
+                },
+                {
+                    zone: EXHIBITION_ZONES.creative,
+                    pos: { x: 0, y: 5.8, z: -27.4 },
+                    rotY: 0,
+                    subtitle: 'Các sản phẩm công nghệ giáo dục sáng tạo khác'
+                }
+            ];
+
+            zoneConfigs.forEach(cfg => {
+                const tex = createTextTexture({
+                    width: 1024,
+                    height: 300,
+                    bgColor: '#091428',
+                    borderColor: cfg.zone.color,
+                    badge: 'PHÂN KHU TRƯNG BÀY',
+                    title: cfg.zone.name.toUpperCase(),
+                    subtitle: cfg.subtitle,
+                    titleSize: 44,
+                    subtitleSize: 25
+                });
+
+                const signBoard = new THREE.Mesh(
+                    new THREE.BoxGeometry(11, 3.0, 0.25),
+                    new THREE.MeshBasicMaterial({ map: tex })
+                );
+                signBoard.position.set(cfg.pos.x, cfg.pos.y, cfg.pos.z);
+                signBoard.rotation.y = cfg.rotY;
+                scene.add(signBoard);
+            });
+        }
+
+        // --- 4. DỰNG BỤC TRƯNG BÀY 3D TỪ DANH SÁCH SẢN PHẨM CỦA QUẢN TRỊ VIÊN ---
+        // Hỗ trợ thêm nhiều sản phẩm trên mỗi khu: tự động chia lưới nhiều hàng/cột khoa học
+        function rebuildProductDisplays() {
+            if (!dynamicProductGroup || !dynamicCarpetGroup) return;
+
+            // Xóa các bục và thảm khu vực cũ trước khi dựng lại
+            while (dynamicProductGroup.children.length > 0) {
+                dynamicProductGroup.remove(dynamicProductGroup.children[0]);
+            }
+            while (dynamicCarpetGroup.children.length > 0) {
+                dynamicCarpetGroup.remove(dynamicCarpetGroup.children[0]);
+            }
+            interactiveMeshes = [];
+            hoveredObject = null;
+
+            // Nhóm sản phẩm theo từng khu vực
+            const grouped = {
+                ai_apps: [],
+                games: [],
+                materials: [],
+                experiments: [],
+                creative: []
+            };
+
+            products.forEach(p => {
+                if (grouped[p.zone]) {
+                    grouped[p.zone].push(p);
+                }
+            });
+
+            // Quy tắc bố trí lưới đa hàng cho từng phân khu để không bị tràn tường khi thêm nhiều sản phẩm:
+            // - Các khu hai bên tường (ai_apps, games, materials, experiments): xếp tối đa 3 bục/cột dọc theo trục Z,
+            //   nếu nhiều hơn 3 sản phẩm sẽ tự động mở rộng thêm các hàng tiến dần vào phía trung tâm (trục X).
+            // - Khu phía sau (creative): xếp tối đa 5 bục/hàng ngang theo trục X,
+            //   nếu nhiều hơn 5 sản phẩm sẽ tự động mở rộng thêm các hàng tiến về phía trước (trục Z).
+            const layoutRules = {
+                ai_apps:     { baseX: -20.2, baseZ: 8,   primaryAxis: 'z', maxPerLine: 3, itemStep: 3.9, rowDir: 1,  rowStep: 3.8, rotY: Math.PI / 2 },
+                games:       { baseX: 20.2,  baseZ: 8,   primaryAxis: 'z', maxPerLine: 3, itemStep: 3.9, rowDir: -1, rowStep: 3.8, rotY: -Math.PI / 2 },
+                materials:   { baseX: -20.2, baseZ: -8,  primaryAxis: 'z', maxPerLine: 3, itemStep: 3.9, rowDir: 1,  rowStep: 3.8, rotY: Math.PI / 2 },
+                experiments: { baseX: 20.2,  baseZ: -8,  primaryAxis: 'z', maxPerLine: 3, itemStep: 3.9, rowDir: -1, rowStep: 3.8, rotY: -Math.PI / 2 },
+                creative:    { baseX: 0,     baseZ: -24, primaryAxis: 'x', maxPerLine: 5, itemStep: 3.9, rowDir: 1,  rowStep: 3.8, rotY: 0 }
+            };
+
+            Object.keys(grouped).forEach(zoneKey => {
+                const items = grouped[zoneKey];
+                const rule = layoutRules[zoneKey];
+                const zoneMeta = EXHIBITION_ZONES[zoneKey];
+
+                // Tính số hàng cần thiết để vẽ thảm ánh sáng phân khu tương ứng
+                const rowCount = Math.max(1, Math.ceil(items.length / rule.maxPerLine));
+                const carpetDepth = 6 + (rowCount - 1) * rule.rowStep;
+                const carpetWidth = rule.primaryAxis === 'z' ? carpetDepth : 18;
+                const carpetLength = rule.primaryAxis === 'z' ? 12.5 : carpetDepth;
+
+                const carpetCenterX = rule.primaryAxis === 'z'
+                    ? rule.baseX + rule.rowDir * ((rowCount - 1) * rule.rowStep) / 2
+                    : rule.baseX;
+                const carpetCenterZ = rule.primaryAxis === 'x'
+                    ? rule.baseZ + rule.rowDir * ((rowCount - 1) * rule.rowStep) / 2
+                    : rule.baseZ;
+
+                const carpet = new THREE.Mesh(
+                    new THREE.PlaneGeometry(carpetWidth, carpetLength),
+                    new THREE.MeshBasicMaterial({
+                        color: zoneMeta.hex,
+                        transparent: true,
+                        opacity: 0.14
+                    })
+                );
+                carpet.rotation.x = -Math.PI / 2;
+                carpet.position.set(carpetCenterX, 0.015, carpetCenterZ);
+                dynamicCarpetGroup.add(carpet);
+
+                // Nếu khu vực chưa có sản phẩm nào -> Đặt 1 bục chờ trạng thái sẵn sàng (không phải sản phẩm giả)
+                if (items.length === 0) {
+                    const emptyStand = createPedestalMesh({
+                        isEmptySlot: true,
+                        zoneMeta: zoneMeta,
+                        title: 'KHU VỰC SẴN SÀNG TRƯNG BÀY',
+                        subtitle: 'Nhấn trực tiếp vào bục này để thêm sản phẩm mới'
+                    });
+                    emptyStand.position.set(rule.baseX, 0, rule.baseZ);
+                    emptyStand.rotation.y = rule.rotY;
+                    dynamicProductGroup.add(emptyStand);
+                    return;
+                }
+
+                // Xếp nhiều sản phẩm theo lưới hàng/cột cân đối
+                items.forEach((prod, idx) => {
+                    const rowIndex = Math.floor(idx / rule.maxPerLine);
+                    const colIndex = idx % rule.maxPerLine;
+
+                    // Số lượng phần tử thực tế trên hàng hiện tại để căn giữa hàng đó
+                    const itemsInThisRow = Math.min(rule.maxPerLine, items.length - rowIndex * rule.maxPerLine);
+                    const totalLineSpan = (itemsInThisRow - 1) * rule.itemStep;
+                    const lineOffset = -totalLineSpan / 2 + colIndex * rule.itemStep;
+                    const depthOffset = rowIndex * rule.rowStep * rule.rowDir;
+
+                    let px = rule.baseX;
+                    let pz = rule.baseZ;
+
+                    if (rule.primaryAxis === 'z') {
+                        pz += lineOffset;
+                        px += depthOffset;
+                    } else {
+                        px += lineOffset;
+                        pz += depthOffset;
+                    }
+
+                    const stand = createPedestalMesh({
+                        isEmptySlot: false,
+                        product: prod,
+                        zoneMeta: zoneMeta,
+                        title: prod.name,
+                        subtitle: prod.desc
+                    });
+                    stand.position.set(px, 0, pz);
+                    stand.rotation.y = rule.rotY;
+                    dynamicProductGroup.add(stand);
+                });
+            });
+        }
+
+        // Hàm tạo mô hình 3D một bục trưng bày kèm màn hình hiển thị sản phẩm
+        function createPedestalMesh({ isEmptySlot, product, zoneMeta, title, subtitle }) {
+            const group = new THREE.Group();
+
+            // 1. Chân đế bục 3D
+            const baseMat = new THREE.MeshStandardMaterial({
+                color: 0x0f172a,
+                metalness: 0.75,
+                roughness: 0.25
+            });
+            const pedestal = new THREE.Mesh(new THREE.BoxGeometry(2.6, 1.35, 1.1), baseMat);
+            pedestal.position.y = 0.675;
+            pedestal.castShadow = true;
+            pedestal.receiveShadow = true;
+            group.add(pedestal);
+
+            // Viền LED quanh bục theo màu phân khu
+            const ledStrip = new THREE.Mesh(
+                new THREE.BoxGeometry(2.68, 0.08, 1.18),
+                new THREE.MeshBasicMaterial({ color: zoneMeta.hex })
+            );
+            ledStrip.position.y = 1.32;
+            group.add(ledStrip);
+
+            // 2. Khung màn hình hiển thị phía trên bục
+            const frameMat = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                metalness: 0.85,
+                roughness: 0.2
+            });
+            const frame = new THREE.Mesh(new THREE.BoxGeometry(3.1, 2.1, 0.16), frameMat);
+            frame.position.set(0, 2.65, 0);
+            group.add(frame);
+
+            // Viền phát sáng màn hình (Sẽ sáng rực khi rê chuột vào)
+            const glowBorderMat = new THREE.MeshBasicMaterial({
+                color: isEmptySlot ? 0x334155 : zoneMeta.hex
+            });
+            const glowBorder = new THREE.Mesh(new THREE.BoxGeometry(3.22, 2.22, 0.12), glowBorderMat);
+            glowBorder.position.set(0, 2.65, -0.01);
+            group.add(glowBorder);
+
+            // 3. Mặt màn hình hiển thị nội dung / hình ảnh
+            const screenTex = createTextTexture({
+                width: 800,
+                height: 520,
+                bgColor: isEmptySlot ? '#070d19' : '#0b1730',
+                borderColor: isEmptySlot ? '#475569' : zoneMeta.color,
+                badge: isEmptySlot ? 'VỊ TRÍ TRỐNG' : zoneMeta.shortName,
+                title: title,
+                subtitle: isEmptySlot ? subtitle : (subtitle.length > 85 ? subtitle.substring(0, 82) + '...' : subtitle),
+                titleSize: isEmptySlot ? 34 : 40,
+                subtitleSize: 22
+            });
+
+            const screenMat = new THREE.MeshBasicMaterial({ map: screenTex });
+            const screenMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.96, 1.96), screenMat);
+            screenMesh.position.set(0, 2.65, 0.09);
+            group.add(screenMesh);
+
+            // Nếu sản phẩm có URL hình ảnh đại diện -> Tải ảnh đắp lên nửa trên màn hình (có xử lý lỗi)
+            if (!isEmptySlot && product && product.image) {
+                const imgLoader = new THREE.TextureLoader();
+                imgLoader.setCrossOrigin('anonymous');
+                imgLoader.load(
+                    product.image,
+                    (loadedTex) => {
+                        // Vẽ kết hợp ảnh sản phẩm + tên sản phẩm lên Canvas Texture
+                        const img = loadedTex.image;
+                        const c = document.createElement('canvas');
+                        c.width = 800; c.height = 520;
+                        const ctx = c.getContext('2d');
+
+                        ctx.fillStyle = '#071024';
+                        ctx.fillRect(0, 0, 800, 520);
+
+                        // Vẽ ảnh sản phẩm ở phần trên
+                        ctx.drawImage(img, 20, 20, 760, 340);
+
+                        // Thanh tiêu đề bên dưới ảnh
+                        ctx.fillStyle = 'rgba(7, 16, 36, 0.94)';
+                        ctx.fillRect(20, 360, 760, 140);
+
+                        ctx.strokeStyle = zoneMeta.color;
+                        ctx.lineWidth = 6;
+                        ctx.strokeRect(16, 16, 768, 488);
+
+                        ctx.fillStyle = '#ffffff';
+                        ctx.font = 'bold 32px Inter, sans-serif';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(product.name.substring(0, 36), 400, 415);
+
+                        ctx.fillStyle = zoneMeta.color;
+                        ctx.font = '600 20px Inter, sans-serif';
+                        ctx.fillText(`Nhấn để ${zoneMeta.actionLabel || 'XEM CHI TIẾT'}`, 400, 462);
+
+                        const combinedTex = new THREE.CanvasTexture(c);
+                        screenMesh.material.map = combinedTex;
+                        screenMesh.material.needsUpdate = true;
+                    },
+                    undefined,
+                    () => {
+                        // Xử lý lỗi khi ảnh không tải được: giữ nguyên texture chữ mặc định rất rõ nét
+                        console.warn('Không thể tải texture ảnh 3D cho sản phẩm:', product.name);
+                    }
+                );
+            }
+            // Đăng ký vật thể tương tác cho cả sản phẩm thực tế lẫn bục trống
+            screenMesh.userData = {
+                isProduct: !isEmptySlot,
+                isEmptySlot: Boolean(isEmptySlot),
+                zoneKey: zoneMeta.id,
+                zoneName: zoneMeta.name,
+                product: product || null,
+                glowBorder: glowBorder,
+                defaultColor: isEmptySlot ? 0x334155 : zoneMeta.hex
+            };
+            interactiveMeshes.push(screenMesh);
+
+            return group;
+        }
+
+        // --- 5. HỆ THỐNG ĐIỀU KHIỂN 360°, DI CHUYỂN & MINI MAP ---
+        function setupControls() {
+            const domElement = renderer.domElement;
+
+            // Biến theo dõi thao tác kéo chuột / vuốt cảm ứng xoay 360 độ
+            let isDragging = false;
+            let dragMoved = false;
+            let prevX = 0;
+            let prevY = 0;
+
+            // --- SỰ KIỆN CHUỘT (DESKTOP) ---
+            domElement.addEventListener('mousedown', (e) => {
+                isDragging = true;
+                dragMoved = false;
+                prevX = e.clientX;
+                prevY = e.clientY;
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                // Cập nhật tọa độ Raycaster để highlight sản phẩm khi rê chuột
+                mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+                mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+                updateHoverTooltipPos(e.clientX, e.clientY);
+
+                if (!isDragging) return;
+                const dx = e.clientX - prevX;
+                const dy = e.clientY - prevY;
+                if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
+
+                prevX = e.clientX;
+                prevY = e.clientY;
+
+                // Thoát chế độ toàn cảnh nếu người dùng tự xoay góc nhìn
+                if (playerState.isOverview) playerState.isOverview = false;
+                playerState.targetPos = null;
+
+                playerState.yaw -= dx * 0.0042;
+                playerState.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, playerState.pitch - dy * 0.0042));
+            });
+
+            window.addEventListener('mouseup', (e) => {
+                if (isDragging && !dragMoved) {
+                    // Nếu chỉ click (không kéo) -> Kiểm tra nhấn vào sản phẩm 3D
+                    handleSceneClick(e.clientX, e.clientY);
+                }
+                isDragging = false;
+            });
+
+            // Con lăn chuột để phóng to / thu nhỏ
+            domElement.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                adjustZoom(e.deltaY > 0 ? 4 : -4);
+            }, { passive: false });
+
+            // --- SỰ KIỆN CẢM ỨNG (ĐIỆN THOẠI & MÁY TÍNH BẢNG) ---
+            domElement.addEventListener('touchstart', (e) => {
+                if (e.touches.length === 1) {
+                    isDragging = true;
+                    dragMoved = false;
+                    prevX = e.touches[0].clientX;
+                    prevY = e.touches[0].clientY;
+                }
+            }, { passive: true });
+
+            domElement.addEventListener('touchmove', (e) => {
+                if (isDragging && e.touches.length === 1) {
+                    const dx = e.touches[0].clientX - prevX;
+                    const dy = e.touches[0].clientY - prevY;
+                    if (Math.abs(dx) > 4 || Math.abs(dy) > 4) dragMoved = true;
+
+                    prevX = e.touches[0].clientX;
+                    prevY = e.touches[0].clientY;
+
+                    if (playerState.isOverview) playerState.isOverview = false;
+                    playerState.targetPos = null;
+
+                    playerState.yaw -= dx * 0.0055;
+                    playerState.pitch = Math.max(-Math.PI / 3, Math.min(Math.PI / 3, playerState.pitch - dy * 0.0055));
+                }
+            }, { passive: true });
+
+            domElement.addEventListener('touchend', (e) => {
+                if (isDragging && !dragMoved && e.changedTouches.length > 0) {
+                    const t = e.changedTouches[0];
+                    handleSceneClick(t.clientX, t.clientY);
+                }
+                isDragging = false;
+            });
+
+            // --- BÀN PHÍM (W A S D & MŨI TÊN) ---
+            window.addEventListener('keydown', (e) => {
+                // Không bắt phím di chuyển khi đang nhập liệu trong Form quản trị
+                if (['INPUT', 'TEXTAREA', 'SELECT'].includes(document.activeElement.tagName)) return;
+
+                switch (e.code) {
+                    case 'KeyW':
+                    case 'ArrowUp':
+                        moveInput.forward = true; break;
+                    case 'KeyS':
+                    case 'ArrowDown':
+                        moveInput.backward = true; break;
+                    case 'KeyA':
+                    case 'ArrowLeft':
+                        moveInput.left = true; break;
+                    case 'KeyD':
+                    case 'ArrowRight':
+                        moveInput.right = true; break;
+                }
+            });
+
+            window.addEventListener('keyup', (e) => {
+                switch (e.code) {
+                    case 'KeyW':
+                    case 'ArrowUp':
+                        moveInput.forward = false; break;
+                    case 'KeyS':
+                    case 'ArrowDown':
+                        moveInput.backward = false; break;
+                    case 'KeyA':
+                    case 'ArrowLeft':
+                        moveInput.left = false; break;
+                    case 'KeyD':
+                    case 'ArrowRight':
+                        moveInput.right = false; break;
+                }
+            });
+
+            // --- CÁC NÚT ĐIỀU HƯỚNG D-PAD TRÊN MÀN HÌNH ---
+            const bindHoldButton = (btnId, directionKey) => {
+                const btn = document.getElementById(btnId);
+                if (!btn) return;
+                const startMove = (e) => { e.preventDefault(); moveInput[directionKey] = true; };
+                const stopMove = () => { moveInput[directionKey] = false; };
+
+                btn.addEventListener('mousedown', startMove);
+                btn.addEventListener('mouseup', stopMove);
+                btn.addEventListener('mouseleave', stopMove);
+                btn.addEventListener('touchstart', startMove, { passive: false });
+                btn.addEventListener('touchend', stopMove);
+            };
+
+            bindHoldButton('move-forward', 'forward');
+            bindHoldButton('move-backward', 'backward');
+            bindHoldButton('move-left', 'left');
+            bindHoldButton('move-right', 'right');
+
+            // --- NÚT ZOOM IN / OUT ---
+            document.getElementById('btn-zoom-in').addEventListener('click', () => {
+                playSoundEffect('click');
+                adjustZoom(-6);
+            });
+            document.getElementById('btn-zoom-out').addEventListener('click', () => {
+                playSoundEffect('click');
+                adjustZoom(6);
+            });
+
+            // --- NÚT CHUYỂN KHU VỰC TRÊN MENU ---
+            document.querySelectorAll('.zone-nav-btn').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    const zoneId = btn.getAttribute('data-zone');
+                    teleportToZone(zoneId);
+                });
+            });
+
+            // --- NÚT TOÀN CẢNH ---
+            document.getElementById('btn-overview').addEventListener('click', () => {
+                playSoundEffect('teleport');
+                playerState.isOverview = true;
+                playerState.targetPos = new THREE.Vector3(0, 16.5, 22);
+                playerState.targetYaw = 0;
+                playerState.targetPitch = -0.68;
+                showToast('Đang quan sát toàn cảnh không gian triển lãm 3D');
+            });
+
+            // --- NÚT TRỞ VỀ VỊ TRÍ BAN ĐẦU ---
+            document.getElementById('btn-reset-pos').addEventListener('click', () => {
+                teleportToZone('reception');
+                showToast('Đã trở về khu vực cổng chào ban đầu');
+            });
+
+            // --- NHẤN VÀO BẢN ĐỒ MINI MAP ĐỂ DI CHUYỂN NHANH ---
+            const miniCanvas = document.getElementById('minimap-canvas');
+            miniCanvas.addEventListener('click', (e) => {
+                const rect = miniCanvas.getBoundingClientRect();
+                const normX = ((e.clientX - rect.left) / rect.width) * 2 - 1; // -1..1
+                const normZ = ((e.clientY - rect.top) / rect.height) * 2 - 1; // -1..1
+
+                const worldX = Math.max(ROOM_BOUNDS.minX, Math.min(ROOM_BOUNDS.maxX, normX * 24));
+                const worldZ = Math.max(ROOM_BOUNDS.minZ, Math.min(ROOM_BOUNDS.maxZ, normZ * 28));
+
+                playerState.isOverview = false;
+                playerState.targetPos = new THREE.Vector3(worldX, 2.2, worldZ);
+                playSoundEffect('teleport');
+            });
+
+            // --- RESPONSIVE RESIZE ---
+            window.addEventListener('resize', () => {
+                if (!camera || !renderer) return;
+                camera.aspect = window.innerWidth / window.innerHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+        function adjustZoom(deltaFov) {
+            playerState.fov = Math.max(32, Math.min(82, playerState.fov + deltaFov));
+            camera.fov = playerState.fov;
+            camera.updateProjectionMatrix();
+        }
+
+        // Dịch chuyển mượt tới một phân khu cụ thể
+        function teleportToZone(zoneId) {
+            const zone = EXHIBITION_ZONES[zoneId];
+            if (!zone) return;
+
+            playSoundEffect('teleport');
+            playerState.isOverview = false;
+            playerState.targetPos = new THREE.Vector3(zone.camPos.x, zone.camPos.y, zone.camPos.z);
+
+            // Tính toán góc xoay hướng thẳng về phía khu vực trưng bày
+            const dx = zone.lookAt.x - zone.camPos.x;
+            const dz = zone.lookAt.z - zone.camPos.z;
+            playerState.targetYaw = Math.atan2(-dx, -dz);
+            playerState.targetPitch = 0;
+
+            updateActiveZoneUI(zoneId);
+        }
+
+        function updateActiveZoneUI(zoneId) {
+            document.querySelectorAll('.zone-nav-btn').forEach(btn => {
+                if (btn.getAttribute('data-zone') === zoneId) {
+                    btn.classList.add('active');
+                } else {
+                    btn.classList.remove('active');
+                }
+            });
+            if (EXHIBITION_ZONES[zoneId]) {
+                document.getElementById('current-zone-label').textContent = EXHIBITION_ZONES[zoneId].shortName;
+            }
+        }
+
+        // Kiểm tra nhấn chuột vào sản phẩm hoặc bục trống trong không gian 3D
+        function handleSceneClick(clientX, clientY) {
+            mouse.x = (clientX / window.innerWidth) * 2 - 1;
+            mouse.y = -(clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(interactiveMeshes, false);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0].object;
+                if (hit.userData && hit.userData.isProduct) {
+                    playSoundEffect('click');
+                    openProductDetailModal(hit.userData.product);
+                } else if (hit.userData && hit.userData.isEmptySlot) {
+                    playSoundEffect('click');
+                    openAdminWithZone(hit.userData.zoneKey);
+                }
+            }
+        }
+
+        function updateHoverTooltipPos(x, y) {
+            const tooltip = document.getElementById('hover-tooltip');
+            tooltip.style.left = `${x}px`;
+            tooltip.style.top = `${y}px`;
+        }
+
+        // Cập nhật hiệu ứng làm nổi bật khi rê chuột qua bục sản phẩm
+        function updateRaycasterHover() {
+            if (!raycaster || !camera || interactiveMeshes.length === 0) return;
+
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(interactiveMeshes, false);
+            const tooltip = document.getElementById('hover-tooltip');
+
+            if (intersects.length > 0) {
+                const target = intersects[0].object;
+                if (hoveredObject !== target) {
+                    // Khôi phục vật thể cũ
+                    if (hoveredObject && hoveredObject.userData.glowBorder) {
+                        hoveredObject.userData.glowBorder.material.color.setHex(hoveredObject.userData.defaultColor);
+                        hoveredObject.parent.scale.set(1, 1, 1);
+                    }
+                    hoveredObject = target;
+                    // Làm nổi bật vật thể mới
+                    if (hoveredObject.userData.glowBorder) {
+                        hoveredObject.userData.glowBorder.material.color.setHex(0xffffff);
+                        hoveredObject.parent.scale.set(1.04, 1.04, 1.04);
+                    }
+                    document.body.style.cursor = 'pointer';
+                    const tooltipLabel = hoveredObject.userData.isEmptySlot
+                        ? `Bục trống (${hoveredObject.userData.zoneName}) - Nhấn để thêm sản phẩm`
+                        : `${hoveredObject.userData.product.name} (Nhấn để xem / chỉnh sửa)`;
+                    document.getElementById('hover-tooltip-text').textContent = tooltipLabel;
+                    tooltip.classList.remove('hidden');
+                    playSoundEffect('hover');
+                }
+            } else {
+                if (hoveredObject) {
+                    if (hoveredObject.userData.glowBorder) {
+                        hoveredObject.userData.glowBorder.material.color.setHex(hoveredObject.userData.defaultColor);
+                        hoveredObject.parent.scale.set(1, 1, 1);
+                    }
+                    hoveredObject = null;
+                    document.body.style.cursor = 'grab';
+                    tooltip.classList.add('hidden');
+                }
+            }
+        }
+
+        // Vẽ bản đồ thu nhỏ (Mini Map) theo thời gian thực
+        function renderMiniMap() {
+            const canvas = document.getElementById('minimap-canvas');
+            if (!canvas) return;
+            const ctx = canvas.getContext('2d');
+            const w = canvas.width;
+            const h = canvas.height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            // Nền bản đồ
+            ctx.fillStyle = '#060d1f';
+            ctx.fillRect(0, 0, w, h);
+
+            // Viền phòng
+            ctx.strokeStyle = 'rgba(56, 189, 248, 0.35)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(4, 4, w - 8, h - 8);
+
+            // Chuyển đổi tọa độ thế giới 3D sang tọa độ MiniMap
+            const toMapX = (wx) => ((wx + 24) / 48) * (w - 16) + 8;
+            const toMapY = (wz) => ((wz + 28) / 56) * (h - 16) + 8;
+
+            // Vẽ các điểm khu vực
+            Object.values(EXHIBITION_ZONES).forEach(z => {
+                const mx = toMapX(z.mapPos.x);
+                const mz = toMapY(z.mapPos.z);
+
+                ctx.fillStyle = z.color;
+                ctx.beginPath();
+                ctx.arc(mx, mz, 5, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Vẽ biểu tượng trung tâm
+            ctx.strokeStyle = '#a855f7';
+            ctx.beginPath();
+            ctx.arc(toMapX(0), toMapY(0), 6, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Vẽ vị trí & hướng nhìn của người tham quan
+            const px = toMapX(playerState.pos.x);
+            const pz = toMapY(playerState.pos.z);
+
+            ctx.save();
+            ctx.translate(px, pz);
+            ctx.rotate(-playerState.yaw);
+
+            // Hình nón tầm nhìn
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.35)';
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.lineTo(-10, -20);
+            ctx.lineTo(10, -20);
+            ctx.closePath();
+            ctx.fill();
+
+            // Chấm người dùng
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(0, 0, 4, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.restore();
+        }
+
+        // Tự động nhận diện người dùng đang đứng gần khu vực nào
+        function detectNearestZone() {
+            if (playerState.isOverview) {
+                document.getElementById('current-zone-label').textContent = 'Toàn Cảnh';
+                return;
+            }
+            let closestId = 'reception';
+            let minDist = Infinity;
+
+            Object.values(EXHIBITION_ZONES).forEach(z => {
+                const dx = playerState.pos.x - z.mapPos.x;
+                const dz = playerState.pos.z - z.mapPos.z;
+                const dist = Math.sqrt(dx * dx + dz * dz);
+                if (dist < minDist) {
+                    minDist = dist;
+                    closestId = z.id;
+                }
+            });
+
+            updateActiveZoneUI(closestId);
+        }
+
+        // Vòng lặp hoạt ảnh chính (Animation Loop)
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const moveSpeed = 0.22;
+            const forwardVec = new THREE.Vector3(-Math.sin(playerState.yaw), 0, -Math.cos(playerState.yaw));
+            const rightVec = new THREE.Vector3(Math.cos(playerState.yaw), 0, -Math.sin(playerState.yaw));
+
+            let isMovingManually = false;
+
+            if (moveInput.forward) {
+                playerState.pos.addScaledVector(forwardVec, moveSpeed);
+                isMovingManually = true;
+            }
+            if (moveInput.backward) {
+                playerState.pos.addScaledVector(forwardVec, -moveSpeed);
+                isMovingManually = true;
+            }
+            if (moveInput.left) {
+                playerState.pos.addScaledVector(rightVec, -moveSpeed);
+                isMovingManually = true;
+            }
+            if (moveInput.right) {
+                playerState.pos.addScaledVector(rightVec, moveSpeed);
+                isMovingManually = true;
+            }
+
+            if (isMovingManually) {
+                playerState.targetPos = null;
+                if (playerState.isOverview) {
+                    playerState.isOverview = false;
+                    playerState.pos.y = 2.2;
+                    playerState.pitch = 0;
+                }
+            }
+
+            // Dịch chuyển mượt khi chọn khu vực trên Menu hoặc MiniMap
+            if (playerState.targetPos) {
+                playerState.pos.lerp(playerState.targetPos, 0.08);
+                if (playerState.targetYaw !== null) {
+                    playerState.yaw += (playerState.targetYaw - playerState.yaw) * 0.08;
+                }
+                if (playerState.targetPitch !== null) {
+                    playerState.pitch += (playerState.targetPitch - playerState.pitch) * 0.08;
+                }
+                if (playerState.pos.distanceTo(playerState.targetPos) < 0.08) {
+                    playerState.targetPos = null;
+                }
+            }
+
+            // Giới hạn không cho đi xuyên tường
+            playerState.pos.x = Math.max(ROOM_BOUNDS.minX, Math.min(ROOM_BOUNDS.maxX, playerState.pos.x));
+            playerState.pos.z = Math.max(ROOM_BOUNDS.minZ, Math.min(ROOM_BOUNDS.maxZ, playerState.pos.z));
+
+            // Cập nhật vị trí và hướng Camera
+            camera.position.copy(playerState.pos);
+            const euler = new THREE.Euler(playerState.pitch, playerState.yaw, 0, 'YXZ');
+            camera.quaternion.setFromEuler(euler);
+
+            // Hoạt ảnh cho khối Hologram và các hạt ánh sáng
+            animatedObjects.forEach(item => {
+                if (item.type === 'spinY') {
+                    item.mesh.rotation.y += item.speed;
+                } else if (item.type === 'spinReverse') {
+                    item.mesh.rotation.y -= item.speed;
+                    item.mesh.rotation.x += item.speed * 0.5;
+                } else if (item.type === 'orbit') {
+                    item.mesh.rotation.z += item.speed;
+                } else if (item.type === 'particles') {
+                    item.mesh.rotation.y += 0.0006;
+                }
+            });
+
+            updateRaycasterHover();
+            detectNearestZone();
+            renderMiniMap();
+
+            renderer.render(scene, camera);
+        }
+
+        // --- 6. QUẢN LÝ MODAL CHI TIẾT SẢN PHẨM & HỆ THỐNG QUẢN TRỊ (CMS) ---
+        let currentViewingProduct = null;
+
+        function openProductDetailModal(product) {
+            currentViewingProduct = product;
+            const modal = document.getElementById('product-detail-modal');
+            const zoneMeta = EXHIBITION_ZONES[product.zone] || EXHIBITION_ZONES.ai_apps;
+
+            document.getElementById('detail-zone-badge').textContent = zoneMeta.name;
+            document.getElementById('detail-title').textContent = product.name;
+            document.getElementById('detail-desc').textContent = product.desc;
+
+            const imgEl = document.getElementById('detail-image');
+            if (product.image) {
+                imgEl.src = product.image;
+            } else {
+                imgEl.src = `https://placehold.co/800x450/0b1730/38bdf8?text=${encodeURIComponent(product.name)}`;
+            }
+
+            const launchBtn = document.getElementById('btn-launch-product');
+            const launchText = document.getElementById('btn-launch-text');
+            const noLinkNotice = document.getElementById('detail-no-link-notice');
+
+            launchText.textContent = zoneMeta.actionLabel || 'XEM CHI TIẾT';
+
+            if (product.link && product.link.trim() !== '') {
+                launchBtn.href = product.link;
+                launchBtn.classList.remove('opacity-50', 'pointer-events-none');
+                noLinkNotice.classList.add('hidden');
+            } else {
+                launchBtn.href = '#';
+                launchBtn.classList.add('opacity-50', 'pointer-events-none');
+                noLinkNotice.classList.remove('hidden');
+            }
+
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeProductDetailModal() {
+            currentViewingProduct = null;
+            const modal = document.getElementById('product-detail-modal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            playSoundEffect('click');
+        }
+
+        // Mở bảng quản trị và chọn sẵn phân khu của bục đang nhấn
+        function openAdminWithZone(zoneKey) {
+            resetAdminForm();
+            if (zoneKey && document.querySelector(`#prod-zone option[value="${zoneKey}"]`)) {
+                document.getElementById('prod-zone').value = zoneKey;
+                document.getElementById('filter-admin-zone').value = zoneKey;
+            }
+            renderAdminProductList();
+            const m = document.getElementById('admin-modal');
+            m.classList.remove('hidden');
+            m.classList.add('flex');
+            setTimeout(() => document.getElementById('prod-name').focus(), 100);
+        }
+
+        // Render danh sách sản phẩm trong trang Quản trị
+        function renderAdminProductList() {
+            const listContainer = document.getElementById('admin-product-list');
+            const emptyState = document.getElementById('admin-empty-state');
+            const filterZone = document.getElementById('filter-admin-zone').value;
+            const totalCountEl = document.getElementById('total-prod-count');
+
+            totalCountEl.textContent = products.length;
+
+            const filtered = filterZone === 'all'
+                ? products
+                : products.filter(p => p.zone === filterZone);
+
+            if (filtered.length === 0) {
+                emptyState.classList.remove('hidden');
+                listContainer.classList.add('hidden');
+                listContainer.innerHTML = '';
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+            listContainer.classList.remove('hidden');
+            listContainer.innerHTML = '';
+
+            filtered.forEach((prod, index) => {
+                const zoneMeta = EXHIBITION_ZONES[prod.zone];
+                const globalIndex = products.findIndex(p => p.id === prod.id);
+
+                const card = document.createElement('div');
+                card.className = 'p-3.5 rounded-2xl bg-slate-900/90 border border-slate-700/80 flex items-center justify-between gap-3 hover:border-cyan-500/40 transition-colors';
+
+                card.innerHTML = `
+                    <div class="flex items-center gap-3 min-w-0">
+                        <img src="${prod.image || 'https://placehold.co/120x120/0f172a/38bdf8?text=AI'}" 
+                             alt="${prod.name}" 
+                             class="w-14 h-14 rounded-xl object-cover bg-slate-950 border border-slate-700 shrink-0"
+                             onerror="this.src='https://placehold.co/120x120/0f172a/38bdf8?text=AI'">
+                        <div class="min-w-0">
+                            <span class="inline-block px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-800 text-cyan-300 mb-1">
+                                ${zoneMeta ? zoneMeta.name : prod.zone}
+                            </span>
+                            <h5 class="text-sm font-bold text-white truncate">${prod.name}</h5>
+                            <p class="text-xs text-slate-400 truncate">${prod.desc}</p>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-1 shrink-0">
+                        <button onclick="moveProductOrder(${globalIndex}, -1)" title="Đưa lên trước" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-xs cursor-pointer">
+                            <i class="fa-solid fa-arrow-up"></i>
+                        </button>
+                        <button onclick="moveProductOrder(${globalIndex}, 1)" title="Đưa xuống sau" class="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center text-xs cursor-pointer">
+                            <i class="fa-solid fa-arrow-down"></i>
+                        </button>
+                        <button onclick="editProduct('${prod.id}')" title="Chỉnh sửa" class="w-8 h-8 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 flex items-center justify-center text-xs cursor-pointer">
+                            <i class="fa-solid fa-pen"></i>
+                        </button>
+                        <button onclick="deleteProduct('${prod.id}')" title="Xóa sản phẩm" class="w-8 h-8 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 flex items-center justify-center text-xs cursor-pointer">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                `;
+                listContainer.appendChild(card);
+            });
+        }
+
+        // Sắp xếp thứ tự trưng bày
+        window.moveProductOrder = function(index, direction) {
+            const newIndex = index + direction;
+            if (newIndex < 0 || newIndex >= products.length) return;
+            const temp = products[index];
+            products[index] = products[newIndex];
+            products[newIndex] = temp;
+
+            saveProductsToStorage();
+            renderAdminProductList();
+            rebuildProductDisplays();
+            playSoundEffect('click');
+            showToast('Đã cập nhật thứ tự trưng bày trên kệ 3D', 'success');
+        };
+
+        // Nạp dữ liệu lên Form để chỉnh sửa
+        window.editProduct = function(id) {
+            const prod = products.find(p => p.id === id);
+            if (!prod) return;
+
+            document.getElementById('prod-id').value = prod.id;
+            document.getElementById('prod-zone').value = prod.zone;
+            document.getElementById('prod-name').value = prod.name;
+            document.getElementById('prod-desc').value = prod.desc;
+            document.getElementById('prod-img-url').value = prod.image || '';
+            document.getElementById('prod-link').value = prod.link || '';
+
+            document.getElementById('form-mode-title').innerHTML = '<i class="fa-solid fa-pen-to-square"></i> Chỉnh sửa sản phẩm';
+            document.getElementById('btn-cancel-edit').classList.remove('hidden');
+            playSoundEffect('click');
+        };
+
+        // Xóa sản phẩm
+        window.deleteProduct = function(id) {
+            products = products.filter(p => p.id !== id);
+            saveProductsToStorage();
+            renderAdminProductList();
+            rebuildProductDisplays();
+            playSoundEffect('click');
+            showToast('Đã xóa sản phẩm khỏi phòng trưng bày', 'info');
+        };
+
+        function resetAdminForm() {
+            document.getElementById('product-form').reset();
+            document.getElementById('prod-id').value = '';
+            document.getElementById('file-upload-status').textContent = 'Chưa chọn tệp';
+            document.getElementById('form-mode-title').innerHTML = '<i class="fa-solid fa-plus-circle"></i> Thêm sản phẩm mới';
+            document.getElementById('btn-cancel-edit').classList.add('hidden');
+        }
+
+        // Khởi tạo toàn bộ sự kiện giao diện người dùng (UI)
+        function setupUIEvents() {
+            // 1. Nút BẮT ĐẦU THAM QUAN ở màn hình chào mừng
+            document.getElementById('btn-start-tour').addEventListener('click', () => {
+                initAudio();
+                playSoundEffect('enter');
+
+                const welcome = document.getElementById('welcome-overlay');
+                const hud = document.getElementById('hud-interface');
+
+                welcome.classList.add('opacity-0', 'pointer-events-none');
+                setTimeout(() => {
+                    welcome.style.display = 'none';
+                }, 700);
+
+                hud.classList.remove('opacity-0');
+                teleportToZone('reception');
+            });
+
+            // 2. Bật / Tắt âm thanh
+            document.getElementById('btn-toggle-audio').addEventListener('click', () => {
+                audioEnabled = !audioEnabled;
+                const icon = document.getElementById('icon-audio');
+                if (audioEnabled) {
+                    icon.className = 'fa-solid fa-volume-high';
+                    playSoundEffect('click');
+                    showToast('Đã bật âm thanh hiệu ứng');
+                } else {
+                    icon.className = 'fa-solid fa-volume-xmark text-slate-500';
+                    showToast('Đã tắt âm thanh');
+                }
+            });
+
+            // 3. Toàn màn hình
+            document.getElementById('btn-fullscreen').addEventListener('click', () => {
+                playSoundEffect('click');
+                if (!document.fullscreenElement) {
+                    document.documentElement.requestFullscreen().catch(() => {
+                        showToast('Trình duyệt không hỗ trợ chế độ toàn màn hình ở khung này');
+                    });
+                } else {
+                    document.exitFullscreen();
+                }
+            });
+
+            // 4. Mở / Đóng Modal Hướng dẫn sử dụng
+            document.getElementById('btn-help').addEventListener('click', () => {
+                playSoundEffect('click');
+                const m = document.getElementById('help-modal');
+                m.classList.remove('hidden');
+                m.classList.add('flex');
+            });
+            document.getElementById('btn-close-help').addEventListener('click', () => {
+                playSoundEffect('click');
+                const m = document.getElementById('help-modal');
+                m.classList.add('hidden');
+                m.classList.remove('flex');
+            });
+
+            // 5. Đóng Modal Chi Tiết Sản Phẩm & Nút Chỉnh Sửa Nhanh Tại Bục
+            document.getElementById('btn-close-detail').addEventListener('click', closeProductDetailModal);
+            document.getElementById('btn-back-to-space').addEventListener('click', closeProductDetailModal);
+            document.getElementById('btn-edit-from-detail').addEventListener('click', () => {
+                if (!currentViewingProduct) return;
+                const prodToEdit = currentViewingProduct;
+                closeProductDetailModal();
+
+                document.getElementById('filter-admin-zone').value = prodToEdit.zone;
+                renderAdminProductList();
+                editProduct(prodToEdit.id);
+
+                const m = document.getElementById('admin-modal');
+                m.classList.remove('hidden');
+                m.classList.add('flex');
+            });
+
+            // 6. Mở / Đóng Modal Quản Trị Sản Phẩm
+            document.getElementById('btn-open-admin').addEventListener('click', () => {
+                playSoundEffect('click');
+                document.getElementById('filter-admin-zone').value = 'all';
+                renderAdminProductList();
+                const m = document.getElementById('admin-modal');
+                m.classList.remove('hidden');
+                m.classList.add('flex');
+            });
+            document.getElementById('btn-close-admin').addEventListener('click', () => {
+                playSoundEffect('click');
+                const m = document.getElementById('admin-modal');
+                m.classList.add('hidden');
+                m.classList.remove('flex');
+                resetAdminForm();
+            });
+
+            document.getElementById('btn-cancel-edit').addEventListener('click', () => {
+                playSoundEffect('click');
+                resetAdminForm();
+            });
+
+            document.getElementById('filter-admin-zone').addEventListener('change', renderAdminProductList);
+
+            // Xử lý tải ảnh từ máy tính trong Form Quản trị
+            document.getElementById('prod-img-file').addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                document.getElementById('file-upload-status').textContent = file.name;
+
+                const reader = new FileReader();
+                reader.onload = function(evt) {
+                    document.getElementById('prod-img-url').value = evt.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+
+            // Xử lý lưu sản phẩm (Thêm mới hoặc Cập nhật)
+            document.getElementById('product-form').addEventListener('submit', (e) => {
+                e.preventDefault();
+
+                const id = document.getElementById('prod-id').value;
+                const zone = document.getElementById('prod-zone').value;
+                const name = document.getElementById('prod-name').value.trim();
+                const desc = document.getElementById('prod-desc').value.trim();
+                const image = document.getElementById('prod-img-url').value.trim();
+                const link = document.getElementById('prod-link').value.trim();
+
+                if (!name || !desc) {
+                    showToast('Vui lòng nhập đầy đủ tên và mô tả sản phẩm!', 'error');
+                    return;
+                }
+
+                if (id) {
+                    // Cập nhật sản phẩm đang sửa
+                    const idx = products.findIndex(p => p.id === id);
+                    if (idx !== -1) {
+                        products[idx] = { ...products[idx], zone, name, desc, image, link };
+                        showToast('Đã cập nhật thông tin sản phẩm lên bục 3D!', 'success');
+                    }
+                } else {
+                    // Thêm sản phẩm mới
+                    const newProd = {
+                        id: 'prod_' + Date.now(),
+                        zone,
+                        name,
+                        desc,
+                        image,
+                        link,
+                        createdAt: new Date().toISOString()
+                    };
+                    products.push(newProd);
+                    showToast('Đã thêm sản phẩm mới vào phòng trưng bày 3D!', 'success');
+                }
+
+                saveProductsToStorage();
+                renderAdminProductList();
+                rebuildProductDisplays();
+                resetAdminForm();
+                playSoundEffect('enter');
+            });
+        }
+
+        // --- KHỞI CHẠY ỨNG DỤNG KHI TẢI XONG TRANG ---
+        window.onload = function() {
+            loadProductsFromStorage();
+            setupUIEvents();
+            init3DScene();
+            animate();
+        };
+    </script>
+</body>
+</html>
