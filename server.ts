@@ -13,6 +13,7 @@ const DATA_DIR = path.resolve(__dirname, 'data');
 const TEACHERS_FILE = path.join(DATA_DIR, 'teachers.json');
 const BRANDING_FILE = path.join(DATA_DIR, 'branding.json');
 const ITEMS_FILE = path.join(DATA_DIR, 'items.json');
+const PUBLIC_SEED_ITEMS_FILE = path.resolve(__dirname, 'public', 'seed-items.json');
 const TEACHER_APP_DATA_FILE = path.join(DATA_DIR, 'teacher_app_data.json');
 const PROMO_CODES_FILE = path.join(DATA_DIR, 'promo_codes.json');
 const FIREBASE_CONFIG_FILE = path.resolve(__dirname, 'firebase-applet-config.json');
@@ -68,10 +69,20 @@ function getStoredItems(): any[] {
 }
 
 function saveStoredItems(items: any[]): void {
+  const serialized = JSON.stringify(items, null, 2);
   try {
-    fs.writeFileSync(ITEMS_FILE, JSON.stringify(items, null, 2), 'utf-8');
+    fs.writeFileSync(ITEMS_FILE, serialized, 'utf-8');
   } catch (err) {
     console.error('Error writing items.json:', err);
+  }
+  try {
+    const publicDir = path.dirname(PUBLIC_SEED_ITEMS_FILE);
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    fs.writeFileSync(PUBLIC_SEED_ITEMS_FILE, serialized, 'utf-8');
+  } catch (err) {
+    console.warn('Error syncing public/seed-items.json:', err);
   }
 }
 

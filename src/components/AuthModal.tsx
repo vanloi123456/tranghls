@@ -180,6 +180,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 onSubmit={handleAdminLogin}
                 className="mt-3 space-y-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200"
               >
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  Nên dùng nút <strong>Đăng nhập bằng Google</strong> ({ADMIN_CREDENTIALS.email}) để đồng bộ ứng dụng lên Firestore trên Vercel.
+                </p>
                 <div>
                   <div className="relative">
                     <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />

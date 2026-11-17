@@ -127,11 +127,23 @@ export default function App() {
     }
     initStorage();
 
+    const unsubscribeFsItems = storageService.subscribeItemsRealtime((latestItems) => {
+      setItems(normalizeItems(latestItems));
+      setIsLoading(false);
+    });
+    const unsubscribeFsBranding = storageService.subscribeBrandingRealtime((latestBranding) => {
+      setBranding(latestBranding);
+    });
+
     const onFullscreenChange = () => {
       setIsFullscreen(Boolean(document.fullscreenElement));
     };
     document.addEventListener('fullscreenchange', onFullscreenChange);
-    return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
+    return () => {
+      unsubscribeFsItems();
+      unsubscribeFsBranding();
+      document.removeEventListener('fullscreenchange', onFullscreenChange);
+    };
   }, []);
 
   // Listen to Firebase Auth state & sync user profile on boot/login (including redirect return on Vercel)
@@ -140,6 +152,9 @@ export default function App() {
       if (redirectRes?.success && redirectRes.user) {
         setCurrentUser(redirectRes.user);
         setRole(authService.getCurrentRole());
+        if (redirectRes.user.role === 'admin') {
+          storageService.ensureCatalogSeededToFirestore().catch(() => {});
+        }
       }
     });
 
@@ -150,6 +165,9 @@ export default function App() {
           if (synced.success && synced.user) {
             setCurrentUser(synced.user);
             setRole(authService.getCurrentRole());
+            if (synced.user.role === 'admin') {
+              storageService.ensureCatalogSeededToFirestore().catch(() => {});
+            }
           }
         } catch (err) {
           console.error('Error syncing Google auth session:', err);

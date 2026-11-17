@@ -115,6 +115,69 @@ service cloud.firestore {
         nextCredits == prevCredits + get(/databases/$(database)/documents/promo_codes/$(codeId)).data.credit_value;
     }
 
+    function isValidContentItem(data) {
+      return data.keys().hasAll([
+          'id',
+          'zone',
+          'title',
+          'type',
+          'order',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'id',
+          'zone',
+          'title',
+          'description',
+          'type',
+          'order',
+          'embedCode',
+          'instructions',
+          'grade',
+          'subject',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.zone is string && data.zone in ['apps', 'games', 'simulations'] &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 300 &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 5000)) &&
+        data.type is string && data.type in ['app', 'game', 'simulation'] &&
+        data.order is int && data.order >= 0 && data.order <= 100000 &&
+        (!('embedCode' in data) || (data.embedCode is string && data.embedCode.size() <= 750000)) &&
+        (!('instructions' in data) || (data.instructions is string && data.instructions.size() <= 5000)) &&
+        (!('grade' in data) || (data.grade is string && data.grade.size() <= 40)) &&
+        (!('subject' in data) || (data.subject is string && data.subject.size() <= 60)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidBrandingSetting(data) {
+      return data.keys().hasAll(['updatedAt']) &&
+        data.keys().hasOnly(['homeAvatar', 'appsAvatar', 'gamesAvatar', 'simsAvatar', 'updatedAt']) &&
+        (!('homeAvatar' in data) || (data.homeAvatar is string && data.homeAvatar.size() <= 500000)) &&
+        (!('appsAvatar' in data) || (data.appsAvatar is string && data.appsAvatar.size() <= 500000)) &&
+        (!('gamesAvatar' in data) || (data.gamesAvatar is string && data.gamesAvatar.size() <= 500000)) &&
+        (!('simsAvatar' in data) || (data.simsAvatar is string && data.simsAvatar.size() <= 500000)) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidCatalogSetting(data) {
+      return data.keys().hasAll(['initialized', 'updatedAt']) &&
+        data.keys().hasOnly(['initialized', 'updatedAt']) &&
+        data.initialized is bool &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidTeacherAppData(data) {
+      return data.keys().hasAll(['entries', 'updatedAt']) &&
+        data.keys().hasOnly(['entries', 'updatedAt']) &&
+        data.entries is map &&
+        data.entries.size() <= 150 &&
+        data.updatedAt is timestamp;
+    }
+
     // --- Collection: /admins/{adminUid} ---
     match /admins/{adminUid} {
       allow get: if isValidId(adminUid) && (isOwner(adminUid) || isBootstrappedAdmin());
@@ -184,6 +247,23 @@ service cloud.firestore {
         );
 
       allow delete: if isValidId(userId) && isAdmin();
+
+      match /app_data/{itemId} {
+        allow get: if isValidId(userId) && isValidId(itemId) && isOwner(userId) &&
+          exists(/databases/$(database)/documents/users/$(userId));
+        allow list: if isValidId(userId) && isOwner(userId);
+        allow create: if isValidId(userId) && isValidId(itemId) && isOwner(userId) &&
+          exists(/databases/$(database)/documents/users/$(userId)) &&
+          isValidTeacherAppData(incoming()) &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidId(userId) && isValidId(itemId) && isOwner(userId) &&
+          exists(/databases/$(database)/documents/users/$(userId)) &&
+          isValidTeacherAppData(incoming()) &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['entries', 'updatedAt']);
+        allow delete: if isValidId(userId) && isValidId(itemId) && isOwner(userId) &&
+          exists(/databases/$(database)/documents/users/$(userId));
+      }
     }
 
     // --- Collection: /promo_codes/{codeId} ---
@@ -223,6 +303,82 @@ service cloud.firestore {
         incoming().diff(existing()).affectedKeys().hasOnly(['is_used', 'used_by', 'used_at']);
 
       allow delete: if isValidPromoCodeId(codeId) && isAdmin();
+    }
+
+    // --- Collection: /content_items/{itemId} (Public educational catalog, Admin-managed) ---
+    match /content_items/{itemId} {
+      allow get: if isValidId(itemId);
+      allow list: if resource.data.zone in ['apps', 'games', 'simulations'];
+
+      allow create: if isValidId(itemId) &&
+        isAdmin() &&
+        isValidContentItem(incoming()) &&
+        incoming().id == itemId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidId(itemId) &&
+        isAdmin() &&
+        isValidContentItem(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'zone',
+          'title',
+          'description',
+          'type',
+          'order',
+          'embedCode',
+          'instructions',
+          'grade',
+          'subject',
+          'updatedAt'
+        ]);
+
+      allow delete: if isValidId(itemId) && isAdmin();
+    }
+
+    // --- Collection: /site_settings/{settingId} (Branding & catalog initialization state) ---
+    match /site_settings/{settingId} {
+      allow get: if settingId in ['branding', 'catalog'];
+      allow list: if false;
+
+      allow create: if isAdmin() && (
+        (
+          settingId == 'branding' &&
+          isValidBrandingSetting(incoming()) &&
+          incoming().updatedAt == request.time
+        ) ||
+        (
+          settingId == 'catalog' &&
+          isValidCatalogSetting(incoming()) &&
+          incoming().updatedAt == request.time
+        )
+      );
+
+      allow update: if isAdmin() && (
+        (
+          settingId == 'branding' &&
+          isValidBrandingSetting(incoming()) &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'homeAvatar',
+            'appsAvatar',
+            'gamesAvatar',
+            'simsAvatar',
+            'updatedAt'
+          ])
+        ) ||
+        (
+          settingId == 'catalog' &&
+          isValidCatalogSetting(incoming()) &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly(['initialized', 'updatedAt'])
+        )
+      );
+
+      allow delete: if isAdmin() && settingId in ['branding', 'catalog'];
     }
   }
 }
