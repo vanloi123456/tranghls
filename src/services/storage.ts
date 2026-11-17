@@ -341,7 +341,11 @@ class StorageService {
       return () => {};
     }
 
+    let errorCount = 0;
     const es = new EventSource('/api/realtime');
+    es.onopen = () => {
+      errorCount = 0;
+    };
     es.onmessage = (ev) => {
       try {
         const parsed = JSON.parse(ev.data);
@@ -349,7 +353,10 @@ class StorageService {
       } catch {}
     };
     es.onerror = () => {
-      // Browser EventSource automatically reconnects
+      errorCount += 1;
+      if (errorCount >= 2) {
+        es.close();
+      }
     };
 
     return () => {

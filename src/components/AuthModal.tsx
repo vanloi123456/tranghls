@@ -53,9 +53,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       if (res.success && res.user) {
         onSuccess(res.user);
         onClose();
-      } else {
-        setErrorMsg(res.message || 'Không thể đăng nhập bằng Google.');
+      } else if (res.message) {
+        setErrorMsg(res.message);
       }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Không thể đăng nhập bằng Google. Vui lòng thử lại.');
     } finally {
       setIsGoogleLoading(false);
     }
@@ -111,7 +113,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
         {/* Status messages */}
         {errorMsg && (
-          <div className="mx-6 mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
+          <div className="mx-6 mt-4 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2 whitespace-pre-line">
             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
             <span>{errorMsg}</span>
           </div>

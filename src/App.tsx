@@ -134,8 +134,15 @@ export default function App() {
     return () => document.removeEventListener('fullscreenchange', onFullscreenChange);
   }, []);
 
-  // Listen to Firebase Auth state & sync user profile on boot/login
+  // Listen to Firebase Auth state & sync user profile on boot/login (including redirect return on Vercel)
   useEffect(() => {
+    authService.handleGoogleRedirectResult().then((redirectRes) => {
+      if (redirectRes?.success && redirectRes.user) {
+        setCurrentUser(redirectRes.user);
+        setRole(authService.getCurrentRole());
+      }
+    });
+
     const unsubscribeAuth = onAuthStateChanged(auth, async (fbUser) => {
       if (fbUser) {
         try {

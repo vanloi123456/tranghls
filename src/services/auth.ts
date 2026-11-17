@@ -18,12 +18,20 @@ import {
   OperationType,
   handleFirestoreError,
 } from '../firebase';
-import { signInWithPopup, signOut, User as FirebaseUser } from 'firebase/auth';
+import {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  signOut,
+  User as FirebaseUser,
+} from 'firebase/auth';
 import {
   doc,
   getDoc,
   setDoc,
   updateDoc,
+  deleteDoc,
+  writeBatch,
   serverTimestamp,
   Timestamp,
   collection,
@@ -49,6 +57,58 @@ function toMillis(val: any, fallback = Date.now()): number {
   if (val instanceof Timestamp) return val.toMillis();
   if (val && typeof val.toMillis === 'function') return val.toMillis();
   return fallback;
+}
+
+async function parseJsonSafe(res: Response): Promise<any | null> {
+  const ct = res.headers.get('content-type') || '';
+  if (!ct.toLowerCase().includes('application/json')) {
+    return null;
+  }
+  try {
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
+function formatGoogleAuthError(err: any): string {
+  const code = err?.code || '';
+  const rawMessage = typeof err?.message === 'string' ? err.message : '';
+
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+    return 'Bạn đã đóng cửa sổ đăng nhập Google.';
+  }
+  if (code === 'auth/popup-blocked') {
+    return 'Trình duyệt đang chặn cửa sổ bật lên. Vui lòng cho phép popup để đăng nhập bằng Google.';
+  }
+  if (code === 'auth/unauthorized-domain') {
+    const currentHost =
+      typeof window !== 'undefined' && window.location?.hostname
+        ? window.location.hostname
+        : 'tên miền hiện tại';
+    return `Tên miền "${currentHost}" chưa được cấp quyền đăng nhập Google trong Firebase Console.\nVui lòng vào Firebase Console (Authentication → Settings → Authorized domains) và thêm "${currentHost}".`;
+  }
+  if (code === 'auth/network-request-failed') {
+    return 'Lỗi kết nối mạng khi đăng nhập Google. Vui lòng kiểm tra Internet và thử lại.';
+  }
+  if (code === 'auth/web-storage-unsupported') {
+    return 'Trình duyệt đang tắt cookie hoặc bộ nhớ cục bộ. Vui lòng bật cookie để đăng nhập Google.';
+  }
+
+  // Extract readable error if thrown as JSON FirestoreErrorInfo
+  if (rawMessage.startsWith('{') && rawMessage.includes('"error"')) {
+    try {
+      const parsed = JSON.parse(rawMessage);
+      if (parsed?.error) {
+        if (String(parsed.error).includes('insufficient permissions')) {
+          return 'Không đủ quyền truy cập dữ liệu tài khoản trên Firestore. Vui lòng thử lại hoặc liên hệ Quản trị viên.';
+        }
+        return `Lỗi đồng bộ tài khoản: ${parsed.error}`;
+      }
+    } catch {}
+  }
+
+  return rawMessage || 'Không thể đăng nhập bằng tài khoản Google. Vui lòng thử lại.';
 }
 
 class AuthService {
@@ -283,20 +343,87 @@ class AuthService {
     try {
       const headers = await this.getFirebaseHeaders();
       const res = await fetch(`/api/auth/me?uid=${encodeURIComponent(user.id)}`, { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.user) {
-          this.setCurrentUser(data.user);
-          return data.user;
-        }
+      const data = await parseJsonSafe(res);
+      if (res.ok && data?.success && data.user) {
+        this.setCurrentUser(data.user);
+        return data.user;
       }
     } catch {}
+
+    // Firestore direct fallback (essential for static Vercel hosting without Express server)
+    if (auth.currentUser && auth.currentUser.uid === user.id) {
+      const userPath = `users/${user.id}`;
+      try {
+        const userRef = doc(db, 'users', user.id);
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          const d = snap.data();
+          let credits = typeof d.credits === 'number' ? d.credits : INITIAL_FREE_CREDITS;
+          const createdAt = toMillis(d.createdAt, user.createdAt);
+          let lastFreeResetAt = toMillis(d.lastFreeResetAt ?? d.createdAt, createdAt);
+          if (
+            Date.now() - lastFreeResetAt >= DAILY_FREE_RESET_MS &&
+            credits < DAILY_FREE_CREDITS
+          ) {
+            try {
+              await updateDoc(userRef, {
+                credits: DAILY_FREE_CREDITS,
+                lastFreeResetAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+              });
+              credits = DAILY_FREE_CREDITS;
+              lastFreeResetAt = Date.now();
+            } catch {}
+          }
+          const updated: UserAccount = {
+            ...user,
+            email: (d.email || user.email).trim().toLowerCase(),
+            fullName: d.fullName || user.fullName,
+            photoURL: d.photoURL || user.photoURL,
+            credits,
+            lastFreeResetAt,
+            lastRedeemedCode:
+              typeof d.lastRedeemedCode === 'string' && d.lastRedeemedCode.trim()
+                ? d.lastRedeemedCode.trim()
+                : user.lastRedeemedCode,
+            createdAt,
+            updatedAt: Date.now(),
+          };
+          this.setCurrentUser(updated);
+          return updated;
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, userPath);
+      }
+    }
     return user;
   }
 
-  // Google Sign-In for Users & Admin
+  // Process pending Google signInWithRedirect result (used when popup is blocked on Vercel/mobile)
+  async handleGoogleRedirectResult(): Promise<{
+    success: boolean;
+    message: string;
+    user?: UserAccount;
+  } | null> {
+    try {
+      const result = await getRedirectResult(auth);
+      if (result?.user) {
+        return await this.syncFirebaseUserProfile(result.user);
+      }
+      return null;
+    } catch (err: any) {
+      console.error('Google redirect sign-in error:', err);
+      return {
+        success: false,
+        message: formatGoogleAuthError(err),
+      };
+    }
+  }
+
+  // Google Sign-In for Users & Admin (popup primary, automatic redirect fallback on standalone hosts like Vercel)
   async signInWithGoogle(): Promise<{
     success: boolean;
+    redirecting?: boolean;
     message: string;
     user?: UserAccount;
   }> {
@@ -307,18 +434,30 @@ class AuthService {
     } catch (err: any) {
       console.error('Google sign-in error:', err);
       const code = err?.code || '';
-      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
-        return { success: false, message: 'Bạn đã đóng cửa sổ đăng nhập Google.' };
+      const isTopLevelWindow = typeof window !== 'undefined' && window.self === window.top;
+
+      if (
+        isTopLevelWindow &&
+        (code === 'auth/popup-blocked' || code === 'auth/operation-not-supported-in-this-environment')
+      ) {
+        try {
+          await signInWithRedirect(auth, googleProvider);
+          return {
+            success: false,
+            redirecting: true,
+            message: 'Đang chuyển hướng đến trang đăng nhập Google...',
+          };
+        } catch (redirectErr: any) {
+          return {
+            success: false,
+            message: formatGoogleAuthError(redirectErr),
+          };
+        }
       }
-      if (code === 'auth/popup-blocked') {
-        return {
-          success: false,
-          message: 'Trình duyệt đang chặn cửa sổ bật lên. Vui lòng cho phép popup để đăng nhập bằng Google.',
-        };
-      }
+
       return {
         success: false,
-        message: err?.message || 'Không thể đăng nhập bằng tài khoản Google. Vui lòng thử lại.',
+        message: formatGoogleAuthError(err),
       };
     }
   }
@@ -347,9 +486,14 @@ class AuthService {
     message: string;
     user?: UserAccount;
   }> {
-    const email = (fbUser.email || '').trim().toLowerCase();
-    const fullName = fbUser.displayName?.trim() || email.split('@')[0] || 'Giáo viên';
-    const photoURL = fbUser.photoURL || undefined;
+    const rawEmail = (fbUser.email || '').trim();
+    const email = rawEmail.toLowerCase().slice(0, 200);
+    const fullName = (
+      fbUser.displayName?.trim() ||
+      email.split('@')[0] ||
+      'Giáo viên'
+    ).slice(0, 150);
+    const photoURL = fbUser.photoURL ? fbUser.photoURL.slice(0, 500) : undefined;
 
     if (email === ADMIN_CREDENTIALS.email.toLowerCase()) {
       const adminUser: UserAccount = {
@@ -384,7 +528,7 @@ class AuthService {
         isNewUser = true;
         const payload: Record<string, any> = {
           uid: fbUser.uid,
-          email,
+          email: rawEmail.slice(0, 200),
           fullName,
           role: 'teacher',
           credits: INITIAL_FREE_CREDITS,
@@ -392,7 +536,7 @@ class AuthService {
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         };
-        if (photoURL) payload.photoURL = photoURL.slice(0, 500);
+        if (photoURL) payload.photoURL = photoURL;
         try {
           await setDoc(userRef, payload);
         } catch (writeErr) {
@@ -430,7 +574,7 @@ class AuthService {
             fullName,
             updatedAt: serverTimestamp(),
           };
-          if (photoURL) profilePatch.photoURL = photoURL.slice(0, 500);
+          if (photoURL) profilePatch.photoURL = photoURL;
           try {
             await updateDoc(userRef, profilePatch);
           } catch (updErr) {
@@ -468,11 +612,9 @@ class AuthService {
           photoURL,
         }),
       });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && data.user) {
-          finalUser = data.user;
-        }
+      const data = await parseJsonSafe(res);
+      if (res.ok && data?.success && data.user) {
+        finalUser = data.user;
       }
     } catch (err) {
       console.warn('Server sync warning during Google sign-in:', err);
@@ -519,41 +661,103 @@ class AuthService {
         headers,
         body: JSON.stringify({ teacherId: user.id, action }),
       });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
 
-      if (res.status === 402 || data.insufficientCredits) {
-        if (data.user) this.setCurrentUser(data.user);
+      if (data) {
+        if (res.status === 402 || data.insufficientCredits) {
+          if (data.user) this.setCurrentUser(data.user);
+          return {
+            success: false,
+            insufficientCredits: true,
+            requiredCredits: data.requiredCredits || expectedCost,
+            user: data.user || user,
+            message:
+              data.message ||
+              `Số dư tín dụng AI không đủ hoặc đã hết (cần ${expectedCost} tín dụng AI). Vui lòng liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để nhận mã kích hoạt.`,
+          };
+        }
+
+        if (res.ok && data.success && data.user) {
+          this.setCurrentUser(data.user);
+          return { success: true, user: data.user };
+        }
+
         return {
           success: false,
-          insufficientCredits: true,
-          requiredCredits: data.requiredCredits || expectedCost,
-          user: data.user || user,
-          message:
-            data.message ||
-            `Số dư tín dụng AI không đủ hoặc đã hết (cần ${expectedCost} tín dụng AI). Vui lòng liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để nhận mã kích hoạt.`,
+          user,
+          message: data.message || 'Không thể trừ tín dụng AI. Vui lòng thử lại.',
         };
       }
+    } catch {}
 
-      if (res.ok && data.success && data.user) {
-        this.setCurrentUser(data.user);
-        return { success: true, user: data.user };
+    // Direct Firestore fallback (for static Vercel hosting where /api/* is unavailable)
+    if (auth.currentUser && auth.currentUser.uid === user.id) {
+      const userPath = `users/${user.id}`;
+      const userRef = doc(db, 'users', user.id);
+      try {
+        const snap = await getDoc(userRef);
+        if (snap.exists()) {
+          const d = snap.data();
+          let currentCredits = typeof d.credits === 'number' ? d.credits : INITIAL_FREE_CREDITS;
+          const createdAt = toMillis(d.createdAt, user.createdAt);
+          let lastFreeResetAt = toMillis(d.lastFreeResetAt ?? d.createdAt, createdAt);
+
+          if (
+            Date.now() - lastFreeResetAt >= DAILY_FREE_RESET_MS &&
+            currentCredits < DAILY_FREE_CREDITS
+          ) {
+            await updateDoc(userRef, {
+              credits: DAILY_FREE_CREDITS,
+              lastFreeResetAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            });
+            currentCredits = DAILY_FREE_CREDITS;
+            lastFreeResetAt = Date.now();
+          }
+
+          const syncedUser: UserAccount = {
+            ...user,
+            credits: currentCredits,
+            lastFreeResetAt,
+          };
+
+          if (currentCredits < expectedCost) {
+            this.setCurrentUser(syncedUser);
+            return {
+              success: false,
+              insufficientCredits: true,
+              requiredCredits: expectedCost,
+              user: syncedUser,
+              message: `Số dư tín dụng AI không đủ hoặc đã hết (thao tác này cần ${expectedCost} tín dụng AI). Hệ thống sẽ tự động làm mới 5 tín dụng AI miễn phí sau 24 giờ, hoặc liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để nhận mã kích hoạt.`,
+            };
+          }
+
+          const nextCredits = currentCredits - expectedCost;
+          await updateDoc(userRef, {
+            credits: nextCredits,
+            updatedAt: serverTimestamp(),
+          });
+          const updatedUser: UserAccount = {
+            ...syncedUser,
+            credits: nextCredits,
+            updatedAt: Date.now(),
+          };
+          this.setCurrentUser(updatedUser);
+          return { success: true, user: updatedUser };
+        }
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, userPath);
       }
-
-      return {
-        success: false,
-        user,
-        message: data.message || 'Không thể trừ tín dụng AI. Vui lòng thử lại.',
-      };
-    } catch {
-      return {
-        success: false,
-        user,
-        message: 'Lỗi kết nối máy chủ khi kiểm tra tín dụng AI.',
-      };
     }
+
+    return {
+      success: false,
+      user,
+      message: 'Lỗi kết nối máy chủ khi kiểm tra tín dụng AI.',
+    };
   }
 
-  // Redeem Promo Code via Backend (anti-cheat: verified Firebase ID Token + Firestore promo_codes check & credit increment)
+  // Redeem Promo Code via Backend or atomic Firestore fallback (for Vercel static hosting)
   async redeemPromoCode(
     user: UserAccount,
     rawCode: string
@@ -578,30 +782,86 @@ class AuthService {
         headers,
         body: JSON.stringify({ code: cleanCode, teacherId: user.id }),
       });
-      const data = await res.json();
+      const data = await parseJsonSafe(res);
 
-      if (res.ok && data.success && data.user) {
-        this.setCurrentUser(data.user);
+      if (data) {
+        if (res.ok && data.success && data.user) {
+          this.setCurrentUser(data.user);
+          return {
+            success: true,
+            addedCredits: data.addedCredits,
+            user: data.user,
+            message:
+              data.message ||
+              `Kích hoạt thành công! Đã cộng +${data.addedCredits} tín dụng AI vào tài khoản.`,
+          };
+        }
+
         return {
-          success: true,
-          addedCredits: data.addedCredits,
-          user: data.user,
-          message:
-            data.message ||
-            `Kích hoạt thành công! Đã cộng +${data.addedCredits} tín dụng AI vào tài khoản.`,
+          success: false,
+          message: data.message || 'Mã kích hoạt không hợp lệ hoặc đã được sử dụng.',
         };
       }
+    } catch {}
 
-      return {
-        success: false,
-        message: data.message || 'Mã kích hoạt không hợp lệ hoặc đã được sử dụng.',
-      };
-    } catch {
-      return {
-        success: false,
-        message: 'Lỗi kết nối máy chủ khi xác nhận mã kích hoạt.',
-      };
+    // Atomic Firestore batch fallback matching firestore.rules Action 4
+    if (auth.currentUser && auth.currentUser.uid === user.id) {
+      const promoPath = `promo_codes/${cleanCode}`;
+      const userPath = `users/${user.id}`;
+      try {
+        const promoRef = doc(db, 'promo_codes', cleanCode);
+        const userRef = doc(db, 'users', user.id);
+        const [promoSnap, userSnap] = await Promise.all([getDoc(promoRef), getDoc(userRef)]);
+
+        if (!promoSnap.exists()) {
+          return { success: false, message: 'Mã kích hoạt không tồn tại.' };
+        }
+        const promoData = promoSnap.data();
+        if (promoData.is_used) {
+          return { success: false, message: 'Mã kích hoạt này đã được sử dụng.' };
+        }
+
+        const addedCredits = Number(promoData.credit_value || 0);
+        const prevCredits = userSnap.exists()
+          ? Number(userSnap.data().credits || 0)
+          : user.credits;
+        const nextCredits = prevCredits + addedCredits;
+
+        const batch = writeBatch(db);
+        batch.update(promoRef, {
+          is_used: true,
+          used_by: user.id,
+          used_at: serverTimestamp(),
+        });
+        batch.update(userRef, {
+          credits: nextCredits,
+          lastRedeemedCode: cleanCode,
+          updatedAt: serverTimestamp(),
+        });
+        await batch.commit();
+
+        const updatedUser: UserAccount = {
+          ...user,
+          credits: nextCredits,
+          lastRedeemedCode: cleanCode,
+          updatedAt: Date.now(),
+        };
+        this.setCurrentUser(updatedUser);
+        return {
+          success: true,
+          addedCredits,
+          user: updatedUser,
+          message: `Kích hoạt thành công! Đã cộng +${addedCredits} tín dụng AI vào tài khoản.`,
+        };
+      } catch (err) {
+        handleFirestoreError(err, OperationType.WRITE, `${promoPath} & ${userPath}`);
+      }
     }
+
+    return {
+      success: false,
+      message: 'Lỗi kết nối máy chủ khi xác nhận mã kích hoạt.',
+    };
   }
 
   // Admin creates a Promo Code
@@ -616,19 +876,56 @@ class AuthService {
         headers,
         body: JSON.stringify(payload),
       });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      const data = await parseJsonSafe(res);
+      if (data) {
+        if (res.ok && data.success) {
+          await this.fetchPromoCodes();
+          return {
+            success: true,
+            promoCode: data.promoCode,
+            message: data.message || 'Đã tạo mã kích hoạt thành công!',
+          };
+        }
+        return { success: false, message: data.message || 'Không thể tạo mã kích hoạt.' };
+      }
+    } catch {}
+
+    // Direct Firestore fallback for Admin on Vercel
+    if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+      const cleanCode = (
+        payload.code?.trim().toUpperCase() ||
+        `AI${payload.credit_value}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+      ).slice(0, 64);
+      const promoPath = `promo_codes/${cleanCode}`;
+      try {
+        const promoRef = doc(db, 'promo_codes', cleanCode);
+        await setDoc(promoRef, {
+          code: cleanCode,
+          credit_value: Math.floor(payload.credit_value),
+          is_used: false,
+          used_by: null,
+          created_by: ADMIN_CREDENTIALS.email,
+          created_at: serverTimestamp(),
+        });
         await this.fetchPromoCodes();
         return {
           success: true,
-          promoCode: data.promoCode,
-          message: data.message || 'Đã tạo mã kích hoạt thành công!',
+          promoCode: {
+            code: cleanCode,
+            credit_value: Math.floor(payload.credit_value),
+            is_used: false,
+            used_by: null,
+            created_by: ADMIN_CREDENTIALS.email,
+            created_at: Date.now(),
+          },
+          message: `Đã tạo mã ${cleanCode} thành công!`,
         };
+      } catch (err) {
+        handleFirestoreError(err, OperationType.CREATE, promoPath);
       }
-      return { success: false, message: data.message || 'Không thể tạo mã kích hoạt.' };
-    } catch {
-      return { success: false, message: 'Lỗi kết nối máy chủ khi tạo mã kích hoạt.' };
     }
+
+    return { success: false, message: 'Lỗi kết nối máy chủ khi tạo mã kích hoạt.' };
   }
 
   // Admin deletes a Promo Code
@@ -639,11 +936,23 @@ class AuthService {
         method: 'DELETE',
         headers,
       });
-      if (res.ok) {
+      const data = await parseJsonSafe(res);
+      if (res.ok && data !== null) {
         await this.fetchPromoCodes();
         return true;
       }
     } catch {}
+
+    if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+      const promoPath = `promo_codes/${code}`;
+      try {
+        await deleteDoc(doc(db, 'promo_codes', code));
+        await this.fetchPromoCodes();
+        return true;
+      } catch (err) {
+        handleFirestoreError(err, OperationType.DELETE, promoPath);
+      }
+    }
     return false;
   }
 
@@ -653,6 +962,7 @@ class AuthService {
     amount: number,
     code?: string
   ): Promise<{ success: boolean; message: string; user?: UserAccount; code?: string }> {
+    let data: any = null;
     try {
       const headers = await this.getAdminHeaders();
       const res = await fetch('/api/credits/topup', {
@@ -664,65 +974,115 @@ class AuthService {
           ...(code ? { code: code.trim().toUpperCase() } : {}),
         }),
       });
-      const data = await res.json();
-      if (data.success) {
-        const issuedCode: string | undefined = data.code || data.user?.lastRedeemedCode;
-        const addedAmount = Number(data.addedCredits || amount || 0);
+      data = await parseJsonSafe(res);
+      if (data) {
+        if (data.success) {
+          const issuedCode: string | undefined = data.code || data.user?.lastRedeemedCode;
+          const addedAmount = Number(data.addedCredits || amount || 0);
 
-        if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
-          try {
-            if (issuedCode && PROMO_CODE_REGEX.test(issuedCode)) {
-              const promoRef = doc(db, 'promo_codes', issuedCode);
-              const promoSnap = await getDoc(promoRef);
-              if (!promoSnap.exists()) {
-                await setDoc(promoRef, {
-                  code: issuedCode,
-                  credit_value: addedAmount,
-                  is_used: true,
-                  used_by: teacherId,
-                  used_at: serverTimestamp(),
-                  created_by: ADMIN_CREDENTIALS.email,
-                  created_at: serverTimestamp(),
-                });
-              } else if (!promoSnap.data()?.is_used) {
-                await updateDoc(promoRef, {
-                  is_used: true,
-                  used_by: teacherId,
-                  used_at: serverTimestamp(),
-                });
-              }
-            }
-
-            const teacherRef = doc(db, 'users', teacherId);
-            const snap = await getDoc(teacherRef);
-            if (snap.exists()) {
-              const currCredits = Number(snap.data().credits || 0);
-              const userPatch: Record<string, any> = {
-                credits: currCredits + addedAmount,
-                updatedAt: serverTimestamp(),
-              };
+          if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+            try {
               if (issuedCode && PROMO_CODE_REGEX.test(issuedCode)) {
-                userPatch.lastRedeemedCode = issuedCode;
+                const promoRef = doc(db, 'promo_codes', issuedCode);
+                const promoSnap = await getDoc(promoRef);
+                if (!promoSnap.exists()) {
+                  await setDoc(promoRef, {
+                    code: issuedCode,
+                    credit_value: addedAmount,
+                    is_used: true,
+                    used_by: teacherId,
+                    used_at: serverTimestamp(),
+                    created_by: ADMIN_CREDENTIALS.email,
+                    created_at: serverTimestamp(),
+                  });
+                } else if (!promoSnap.data()?.is_used) {
+                  await updateDoc(promoRef, {
+                    is_used: true,
+                    used_by: teacherId,
+                    used_at: serverTimestamp(),
+                  });
+                }
               }
-              await updateDoc(teacherRef, userPatch);
-            }
-          } catch (err) {
-            console.warn('Firestore admin topup/code sync warning:', err);
-          }
-        }
 
+              const teacherRef = doc(db, 'users', teacherId);
+              const snap = await getDoc(teacherRef);
+              if (snap.exists()) {
+                const currCredits = Number(snap.data().credits || 0);
+                const userPatch: Record<string, any> = {
+                  credits: currCredits + addedAmount,
+                  updatedAt: serverTimestamp(),
+                };
+                if (issuedCode && PROMO_CODE_REGEX.test(issuedCode)) {
+                  userPatch.lastRedeemedCode = issuedCode;
+                }
+                await updateDoc(teacherRef, userPatch);
+              }
+            } catch (err) {
+              console.warn('Firestore admin topup/code sync warning:', err);
+            }
+          }
+
+          await Promise.all([this.fetchTeachersFromServer(), this.fetchPromoCodes()]);
+          return {
+            success: true,
+            message: data.message,
+            user: data.user,
+            code: issuedCode,
+          };
+        }
+        return { success: false, message: data.message || 'Không thể cấp mã / cộng tín dụng' };
+      }
+    } catch {}
+
+    // Direct Firestore fallback for Admin on static Vercel hosting
+    if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+      const addedAmount = Math.max(1, Math.floor(amount || 0));
+      const issuedCode = (
+        code?.trim().toUpperCase() ||
+        `AI${addedAmount}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
+      ).slice(0, 64);
+      const teacherRef = doc(db, 'users', teacherId);
+      const promoRef = doc(db, 'promo_codes', issuedCode);
+      try {
+        const [teacherSnap, promoSnap] = await Promise.all([getDoc(teacherRef), getDoc(promoRef)]);
+        if (!teacherSnap.exists()) {
+          return { success: false, message: 'Không tìm thấy tài khoản giáo viên trên Firestore.' };
+        }
+        if (!promoSnap.exists()) {
+          await setDoc(promoRef, {
+            code: issuedCode,
+            credit_value: addedAmount,
+            is_used: true,
+            used_by: teacherId,
+            used_at: serverTimestamp(),
+            created_by: ADMIN_CREDENTIALS.email,
+            created_at: serverTimestamp(),
+          });
+        } else if (!promoSnap.data()?.is_used) {
+          await updateDoc(promoRef, {
+            is_used: true,
+            used_by: teacherId,
+            used_at: serverTimestamp(),
+          });
+        }
+        const currCredits = Number(teacherSnap.data().credits || 0);
+        await updateDoc(teacherRef, {
+          credits: currCredits + addedAmount,
+          lastRedeemedCode: issuedCode,
+          updatedAt: serverTimestamp(),
+        });
         await Promise.all([this.fetchTeachersFromServer(), this.fetchPromoCodes()]);
         return {
           success: true,
-          message: data.message,
-          user: data.user,
+          message: `Đã cấp mã ${issuedCode} (+${addedAmount} tín dụng AI) thành công!`,
           code: issuedCode,
         };
+      } catch (err) {
+        handleFirestoreError(err, OperationType.UPDATE, `users/${teacherId}`);
       }
-      return { success: false, message: data.message || 'Không thể cấp mã / cộng tín dụng' };
-    } catch {
-      return { success: false, message: 'Lỗi kết nối máy chủ khi cấp mã kích hoạt' };
     }
+
+    return { success: false, message: 'Lỗi kết nối máy chủ khi cấp mã kích hoạt' };
   }
 
   // Admin login check
@@ -733,28 +1093,30 @@ class AuthService {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: ADMIN_CREDENTIALS.email, password }),
       });
-      const data = await res.json();
-      if (data.success && data.user) {
-        this.setCurrentUser(data.user);
-        return { success: true, message: data.message || 'Đăng nhập Quản trị viên thành công', user: data.user };
+      const data = await parseJsonSafe(res);
+      if (data) {
+        if (data.success && data.user) {
+          this.setCurrentUser(data.user);
+          return { success: true, message: data.message || 'Đăng nhập Quản trị viên thành công', user: data.user };
+        }
+        return { success: false, message: data.message || 'Mật khẩu quản trị viên không chính xác' };
       }
-      return { success: false, message: data.message || 'Mật khẩu quản trị viên không chính xác' };
-    } catch {
-      if (password === ADMIN_CREDENTIALS.password) {
-        const adminUser: UserAccount = {
-          id: 'admin_root',
-          email: ADMIN_CREDENTIALS.email,
-          fullName: 'Quản trị viên Hệ thống',
-          role: 'admin',
-          status: 'active',
-          credits: 999999,
-          createdAt: 1700000000000,
-        };
-        this.setCurrentUser(adminUser);
-        return { success: true, message: 'Đăng nhập Quản trị viên thành công', user: adminUser };
-      }
-      return { success: false, message: 'Mật khẩu quản trị viên không chính xác' };
+    } catch {}
+
+    if (password === ADMIN_CREDENTIALS.password) {
+      const adminUser: UserAccount = {
+        id: 'admin_root',
+        email: ADMIN_CREDENTIALS.email,
+        fullName: 'Quản trị viên Hệ thống',
+        role: 'admin',
+        status: 'active',
+        credits: 999999,
+        createdAt: 1700000000000,
+      };
+      this.setCurrentUser(adminUser);
+      return { success: true, message: 'Đăng nhập Quản trị viên thành công', user: adminUser };
     }
+    return { success: false, message: 'Mật khẩu quản trị viên không chính xác' };
   }
 
   // Admin deletes teacher account

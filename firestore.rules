@@ -36,7 +36,7 @@ service cloud.firestore {
     }
 
     function isBootstrappedAdmin() {
-      return isVerified() && request.auth.token.email == 'vanloiphuhiep.09@gmail.com';
+      return isVerified() && request.auth.token.email.lower() == 'vanloiphuhiep.09@gmail.com';
     }
 
     function isAdmin() {
@@ -131,7 +131,7 @@ service cloud.firestore {
         isOwner(userId) &&
         isValidUserProfile(incoming()) &&
         incoming().uid == request.auth.uid &&
-        incoming().email == request.auth.token.email &&
+        incoming().email.lower() == request.auth.token.email.lower() &&
         incoming().role == 'teacher' &&
         incoming().credits == 5 &&
         (!('lastFreeResetAt' in incoming()) || incoming().lastFreeResetAt == request.time) &&
