@@ -173,6 +173,7 @@ class AuthService {
   private cachedTeachers: UserAccount[] = [];
   private cachedPromoCodes: PromoCode[] = [];
   private accountsSeedingPromise: Promise<void> | null = null;
+  private pendingDisplayNames = new Map<string, string>();
   private syncingProfilePromises = new Map<
     string,
     Promise<{ success: boolean; message: string; user?: UserAccount }>
@@ -761,18 +762,22 @@ class AuthService {
       };
     }
 
+    this.pendingDisplayNames.set(cleanEmail, cleanName);
     try {
       const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       try {
         await updateProfile(cred.user, { displayName: cleanName });
       } catch {}
       sendEmailVerification(cred.user).catch(() => {});
-      return await this.syncFirebaseUserProfile(cred.user);
+      const synced = await this.syncFirebaseUserProfile(cred.user);
+      return synced;
     } catch (err: any) {
       return {
         success: false,
         message: formatGoogleAuthError(err),
       };
+    } finally {
+      this.pendingDisplayNames.delete(cleanEmail);
     }
   }
 
@@ -804,6 +809,7 @@ class AuthService {
     const email = rawEmail.toLowerCase().slice(0, 200);
     const fullName = (
       fbUser.displayName?.trim() ||
+      this.pendingDisplayNames.get(email) ||
       email.split('@')[0] ||
       'Giáo viên'
     ).slice(0, 150);
