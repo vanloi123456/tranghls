@@ -10,7 +10,6 @@ import {
   Gamepad2,
   Puzzle,
   Sparkles,
-  Eye,
 } from 'lucide-react';
 import { ContentItem, UserRole, UserAccount } from '../types';
 import { processImageFile } from '../utils/image';
@@ -23,9 +22,9 @@ interface ZoneAppsRepositoryProps {
   onUploadAvatar?: (dataUrl: string) => void;
   onRemoveAvatar?: () => void;
   onOpenAuth: () => void;
+  onSelectZone?: () => void;
   onEditItem: (item: ContentItem) => void;
   onDeleteItem: (item: ContentItem) => void;
-  onViewApp: (item: ContentItem) => void;
   onLaunchApp: (item: ContentItem) => void;
 }
 
@@ -82,9 +81,9 @@ export const ZoneAppsRepository: React.FC<ZoneAppsRepositoryProps> = ({
   avatarUrl,
   onUploadAvatar,
   onRemoveAvatar,
+  onSelectZone,
   onEditItem,
   onDeleteItem,
-  onViewApp,
   onLaunchApp,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,9 +155,13 @@ export const ZoneAppsRepository: React.FC<ZoneAppsRepositoryProps> = ({
 
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-bold text-slate-900 font-display">
+              <button
+                type="button"
+                onClick={onSelectZone}
+                className="text-xl font-bold text-slate-900 hover:text-sky-700 font-display transition-colors cursor-pointer text-left"
+              >
                 Kho Ứng Dụng
-              </h2>
+              </button>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
                 {items.length} ứng dụng
               </span>
@@ -255,21 +258,12 @@ export const ZoneAppsRepository: React.FC<ZoneAppsRepositoryProps> = ({
                   </div>
                 </div>
 
-                {/* Bottom: Xem & Bắt đầu */}
-                <div className="pt-3 border-t border-slate-100 flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onViewApp(item)}
-                    className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-bold text-xs transition-all cursor-pointer shrink-0"
-                    title="Xem nội dung ứng dụng"
-                  >
-                    <Eye className="w-4 h-4" />
-                    <span>Xem</span>
-                  </button>
+                {/* Bottom: Bắt đầu */}
+                <div className="pt-3 border-t border-slate-100 flex items-center">
                   <button
                     type="button"
                     onClick={() => onLaunchApp(item)}
-                    className="flex-1 inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-xs shadow-sm shadow-sky-600/20 transition-all cursor-pointer"
+                    className="w-full inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-sky-600 hover:bg-sky-700 active:scale-98 text-white font-bold text-xs shadow-sm shadow-sky-600/20 transition-all cursor-pointer"
                   >
                     <Play className="w-4 h-4 fill-current" />
                     <span>Bắt đầu</span>

@@ -1,14 +1,21 @@
 import React, { useEffect } from 'react';
-import { X, Cpu, Gamepad2, FlaskConical, Eye } from 'lucide-react';
+import { X, Cpu, Gamepad2, FlaskConical, Eye, Home, ChevronRight } from 'lucide-react';
 import { ContentItem } from '../types';
 import { generateSandboxHtml } from '../utils/embed';
 
 interface ContentViewModalProps {
   item: ContentItem | null;
+  onNavigateHome?: () => void;
+  onNavigateZone?: () => void;
   onClose: () => void;
 }
 
-export const ContentViewModal: React.FC<ContentViewModalProps> = ({ item, onClose }) => {
+export const ContentViewModal: React.FC<ContentViewModalProps> = ({
+  item,
+  onNavigateHome,
+  onNavigateZone,
+  onClose,
+}) => {
   useEffect(() => {
     if (!item) return;
     const onKeyDown = (e: KeyboardEvent) => {
@@ -70,14 +77,37 @@ export const ContentViewModal: React.FC<ContentViewModalProps> = ({ item, onClos
               <ZoneIcon className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
+              <nav
+                aria-label="Breadcrumb"
+                className="flex items-center gap-1 text-[11px] text-slate-600 font-medium flex-wrap mb-1"
+              >
+                <button
+                  type="button"
+                  onClick={onNavigateHome || onClose}
+                  className="inline-flex items-center gap-1 hover:text-sky-700 transition-colors cursor-pointer"
+                >
+                  <Home className="w-3 h-3 text-sky-600" />
+                  <span>Trang chủ</span>
+                </button>
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                <button
+                  type="button"
+                  onClick={onNavigateZone || onClose}
+                  className="hover:text-sky-700 transition-colors cursor-pointer"
+                >
+                  {zoneMeta.label}
+                </button>
+                <ChevronRight className="w-3 h-3 text-slate-400 shrink-0" />
+                <span className="font-semibold text-slate-800 truncate max-w-[200px]">
+                  {item.title}
+                </span>
                 <span
-                  className={`inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-0.5 rounded-lg border ${zoneMeta.badgeClass}`}
+                  className={`ml-1 inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-md border ${zoneMeta.badgeClass}`}
                 >
                   <Eye className="w-3 h-3" />
-                  <span>Xem nội dung • {zoneMeta.label}</span>
+                  <span>Xem nội dung</span>
                 </span>
-              </div>
+              </nav>
               <h2 className="text-lg font-bold text-slate-900 font-display leading-snug">
                 {item.title}
               </h2>

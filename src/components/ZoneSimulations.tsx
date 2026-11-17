@@ -23,6 +23,7 @@ interface ZoneSimulationsProps {
   avatarUrl?: string;
   onUploadAvatar?: (dataUrl: string) => void;
   onRemoveAvatar?: () => void;
+  onSelectZone?: () => void;
   onEditItem: (item: ContentItem) => void;
   onDeleteItem: (item: ContentItem) => void;
   onViewSimulation: (item: ContentItem) => void;
@@ -35,6 +36,7 @@ export const ZoneSimulations: React.FC<ZoneSimulationsProps> = ({
   avatarUrl,
   onUploadAvatar,
   onRemoveAvatar,
+  onSelectZone,
   onEditItem,
   onDeleteItem,
   onViewSimulation,
@@ -109,9 +111,13 @@ export const ZoneSimulations: React.FC<ZoneSimulationsProps> = ({
 
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-bold text-slate-900 font-display">
+              <button
+                type="button"
+                onClick={onSelectZone}
+                className="text-xl font-bold text-slate-900 hover:text-teal-700 font-display transition-colors cursor-pointer text-left"
+              >
                 Thí Nghiệm Mô Phỏng
-              </h2>
+              </button>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-slate-100 text-slate-700">
                 {items.length} thí nghiệm
               </span>

@@ -24,6 +24,7 @@ interface ZoneInteractiveGamesProps {
   avatarUrl?: string;
   onUploadAvatar?: (dataUrl: string) => void;
   onRemoveAvatar?: () => void;
+  onSelectZone?: () => void;
   onEditItem: (item: ContentItem) => void;
   onDeleteItem: (item: ContentItem) => void;
   onViewGame: (item: ContentItem) => void;
@@ -36,6 +37,7 @@ export const ZoneInteractiveGames: React.FC<ZoneInteractiveGamesProps> = ({
   avatarUrl,
   onUploadAvatar,
   onRemoveAvatar,
+  onSelectZone,
   onEditItem,
   onDeleteItem,
   onViewGame,
@@ -110,9 +112,13 @@ export const ZoneInteractiveGames: React.FC<ZoneInteractiveGamesProps> = ({
 
           <div>
             <div className="flex items-center gap-2 flex-wrap">
-              <h2 className="text-xl font-bold text-slate-900 font-display">
+              <button
+                type="button"
+                onClick={onSelectZone}
+                className="text-xl font-bold text-slate-900 hover:text-indigo-700 font-display transition-colors cursor-pointer text-left"
+              >
                 Học Liệu Số
-              </h2>
+              </button>
               <span className="text-xs font-semibold px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800">
                 {items.length} học liệu
               </span>

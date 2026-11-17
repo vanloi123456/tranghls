@@ -11,6 +11,8 @@ import {
   APP_LAUNCH_CREDIT_COST,
   PROMO_CODE_REGEX,
 } from '../types';
+import defaultTeachersRaw from '../data/defaultTeachers.json';
+import defaultPromoCodesRaw from '../data/defaultPromoCodes.json';
 import {
   auth,
   db,
@@ -22,6 +24,10 @@ import {
   signInWithPopup,
   signInWithRedirect,
   getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile,
+  sendEmailVerification,
   signOut,
   User as FirebaseUser,
 } from 'firebase/auth';
@@ -88,11 +94,29 @@ function formatGoogleAuthError(err: any): string {
         : 'tên miền hiện tại';
     return `Tên miền "${currentHost}" chưa được cấp quyền đăng nhập Google trong Firebase Console.\nVui lòng vào Firebase Console (Authentication → Settings → Authorized domains) và thêm "${currentHost}".`;
   }
+  if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+    return 'Email hoặc mật khẩu không chính xác.';
+  }
+  if (code === 'auth/email-already-in-use') {
+    return 'Email này đã được đăng ký. Vui lòng chuyển sang Đăng nhập.';
+  }
+  if (code === 'auth/weak-password') {
+    return 'Mật khẩu quá yếu. Vui lòng nhập mật khẩu từ 6 ký tự trở lên.';
+  }
+  if (code === 'auth/invalid-email') {
+    return 'Địa chỉ email không đúng định dạng.';
+  }
+  if (code === 'auth/operation-not-allowed') {
+    return 'Đăng nhập bằng Email/Mật khẩu chưa được bật trong Firebase Console (Authentication → Sign-in method → Email/Password).';
+  }
+  if (code === 'auth/too-many-requests') {
+    return 'Bạn đã thử đăng nhập quá nhiều lần. Vui lòng đợi vài phút rồi thử lại.';
+  }
   if (code === 'auth/network-request-failed') {
-    return 'Lỗi kết nối mạng khi đăng nhập Google. Vui lòng kiểm tra Internet và thử lại.';
+    return 'Lỗi kết nối mạng khi đăng nhập. Vui lòng kiểm tra Internet và thử lại.';
   }
   if (code === 'auth/web-storage-unsupported') {
-    return 'Trình duyệt đang tắt cookie hoặc bộ nhớ cục bộ. Vui lòng bật cookie để đăng nhập Google.';
+    return 'Trình duyệt đang tắt cookie hoặc bộ nhớ cục bộ. Vui lòng bật cookie để đăng nhập.';
   }
 
   // Extract readable error if thrown as JSON FirestoreErrorInfo
@@ -108,12 +132,47 @@ function formatGoogleAuthError(err: any): string {
     } catch {}
   }
 
-  return rawMessage || 'Không thể đăng nhập bằng tài khoản Google. Vui lòng thử lại.';
+  return rawMessage || 'Không thể đăng nhập. Vui lòng thử lại.';
+}
+
+function getBundledSeedTeachers(): UserAccount[] {
+  if (!Array.isArray(defaultTeachersRaw)) return [];
+  return defaultTeachersRaw
+    .filter((t: any) => t && t.id && t.email)
+    .map((t: any) => ({
+      id: String(t.id),
+      email: String(t.email).trim().toLowerCase(),
+      fullName: String(t.fullName || 'Giáo viên'),
+      photoURL: t.photoURL ? String(t.photoURL) : undefined,
+      role: 'teacher' as const,
+      status: t.status === 'blocked' ? ('blocked' as const) : ('active' as const),
+      credits: typeof t.credits === 'number' ? Math.max(0, Math.floor(t.credits)) : INITIAL_FREE_CREDITS,
+      lastFreeResetAt: typeof t.lastFreeResetAt === 'number' ? t.lastFreeResetAt : undefined,
+      lastRedeemedCode: typeof t.lastRedeemedCode === 'string' ? t.lastRedeemedCode : undefined,
+      createdAt: typeof t.createdAt === 'number' ? t.createdAt : Date.now(),
+      updatedAt: typeof t.updatedAt === 'number' ? t.updatedAt : Date.now(),
+    }));
+}
+
+function getBundledSeedPromoCodes(): PromoCode[] {
+  if (!Array.isArray(defaultPromoCodesRaw)) return [];
+  return defaultPromoCodesRaw
+    .filter((c: any) => c && c.code)
+    .map((c: any) => ({
+      code: String(c.code).trim().toUpperCase(),
+      credit_value: Number(c.credit_value || 0),
+      is_used: Boolean(c.is_used),
+      used_by: c.used_by ?? null,
+      used_at: c.used_at ?? null,
+      created_by: String(c.created_by || ADMIN_CREDENTIALS.email),
+      created_at: typeof c.created_at === 'number' ? c.created_at : Date.now(),
+    }));
 }
 
 class AuthService {
   private cachedTeachers: UserAccount[] = [];
   private cachedPromoCodes: PromoCode[] = [];
+  private accountsSeedingPromise: Promise<void> | null = null;
   private syncingProfilePromises = new Map<
     string,
     Promise<{ success: boolean; message: string; user?: UserAccount }>
@@ -126,15 +185,21 @@ class AuthService {
   private initFromStorage(): void {
     try {
       const data = localStorage.getItem(TEACHERS_STORAGE_KEY);
-      if (data) this.cachedTeachers = JSON.parse(data);
+      const parsed = data ? JSON.parse(data) : [];
+      this.cachedTeachers =
+        Array.isArray(parsed) && parsed.length > 0 ? parsed : getBundledSeedTeachers();
     } catch {
-      this.cachedTeachers = [];
+      this.cachedTeachers = getBundledSeedTeachers();
     }
     try {
       const codes = localStorage.getItem(PROMO_CODES_STORAGE_KEY);
-      if (codes) this.cachedPromoCodes = JSON.parse(codes);
+      const parsedCodes = codes ? JSON.parse(codes) : [];
+      this.cachedPromoCodes =
+        Array.isArray(parsedCodes) && parsedCodes.length > 0
+          ? parsedCodes
+          : getBundledSeedPromoCodes();
     } catch {
-      this.cachedPromoCodes = [];
+      this.cachedPromoCodes = getBundledSeedPromoCodes();
     }
   }
 
@@ -190,27 +255,157 @@ class AuthService {
     return `${minutes} phút`;
   }
 
+  async ensureAccountsSeededToFirestore(): Promise<void> {
+    if (
+      !auth.currentUser?.emailVerified ||
+      auth.currentUser?.email?.toLowerCase() !== ADMIN_CREDENTIALS.email.toLowerCase()
+    ) {
+      return;
+    }
+    if (this.accountsSeedingPromise) return this.accountsSeedingPromise;
+
+    this.accountsSeedingPromise = (async () => {
+      try {
+        const accountsSettingRef = doc(db, 'site_settings', 'accounts');
+        const accountsSettingSnap = await getDoc(accountsSettingRef).catch(() => null);
+        const alreadyInitialized = Boolean(
+          accountsSettingSnap?.exists() && accountsSettingSnap.data()?.initialized === true
+        );
+
+        // Gather seed accounts from Express /api/teachers (if live), static /seed-teachers.json, and bundled defaultTeachersRaw
+        let serverTeachers: UserAccount[] = [];
+        let serverCodes: PromoCode[] = [];
+        try {
+          const headers = await this.getAdminHeaders();
+          const [tRes, cRes] = await Promise.all([
+            fetch('/api/teachers', { headers }),
+            fetch('/api/promo-codes', { headers }),
+          ]);
+          const [tJson, cJson] = await Promise.all([
+            tRes.ok ? parseJsonSafe(tRes) : null,
+            cRes.ok ? parseJsonSafe(cRes) : null,
+          ]);
+          if (tJson?.success && Array.isArray(tJson.teachers)) serverTeachers = tJson.teachers;
+          if (cJson?.success && Array.isArray(cJson.promoCodes)) serverCodes = cJson.promoCodes;
+        } catch {}
+
+        if (serverTeachers.length === 0) {
+          try {
+            const sRes = await fetch('/seed-teachers.json', { cache: 'no-store' });
+            const sJson = sRes.ok ? await parseJsonSafe(sRes) : null;
+            if (Array.isArray(sJson)) serverTeachers = sJson;
+          } catch {}
+        }
+        if (serverCodes.length === 0) {
+          try {
+            const cRes = await fetch('/seed-promo-codes.json', { cache: 'no-store' });
+            const cJson = cRes.ok ? await parseJsonSafe(cRes) : null;
+            if (Array.isArray(cJson)) serverCodes = cJson;
+          } catch {}
+        }
+
+        const candidateTeachersMap = new Map<string, UserAccount>();
+        for (const t of getBundledSeedTeachers()) candidateTeachersMap.set(t.id, t);
+        for (const t of serverTeachers) candidateTeachersMap.set(t.id, t);
+
+        const candidateCodesMap = new Map<string, PromoCode>();
+        for (const c of getBundledSeedPromoCodes()) candidateCodesMap.set(c.code, c);
+        for (const c of serverCodes) candidateCodesMap.set(c.code.toUpperCase(), c);
+
+        // Sync candidate teachers into Firestore /users/{uid}
+        for (const t of candidateTeachersMap.values()) {
+          if (!t.id || t.id === 'admin_root' || t.role !== 'teacher') continue;
+          const ref = doc(db, 'users', t.id);
+          const snap = await getDoc(ref).catch(() => null);
+          if (!snap?.exists()) {
+            const payload: Record<string, any> = {
+              uid: t.id,
+              email: t.email.trim().slice(0, 200),
+              fullName: (t.fullName || 'Giáo viên').slice(0, 150),
+              role: 'teacher',
+              credits: Math.max(0, Math.floor(t.credits ?? INITIAL_FREE_CREDITS)),
+              lastFreeResetAt: t.lastFreeResetAt ? Timestamp.fromMillis(t.lastFreeResetAt) : serverTimestamp(),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            };
+            if (t.photoURL) payload.photoURL = t.photoURL.slice(0, 500);
+            if (t.lastRedeemedCode && PROMO_CODE_REGEX.test(t.lastRedeemedCode)) {
+              payload.lastRedeemedCode = t.lastRedeemedCode;
+            }
+            await setDoc(ref, payload).catch(() => {});
+          } else if (!alreadyInitialized) {
+            const existingCredits = Number(snap.data()?.credits ?? 0);
+            if (t.credits > existingCredits) {
+              const patch: Record<string, any> = {
+                credits: Math.floor(t.credits),
+                updatedAt: serverTimestamp(),
+              };
+              if (t.lastRedeemedCode && PROMO_CODE_REGEX.test(t.lastRedeemedCode)) {
+                patch.lastRedeemedCode = t.lastRedeemedCode;
+              }
+              await updateDoc(ref, patch).catch(() => {});
+            }
+          }
+        }
+
+        // Sync candidate promo codes into Firestore /promo_codes/{code}
+        for (const c of candidateCodesMap.values()) {
+          const cleanCode = String(c.code || '').trim().toUpperCase();
+          if (!PROMO_CODE_REGEX.test(cleanCode)) continue;
+          const ref = doc(db, 'promo_codes', cleanCode);
+          const snap = await getDoc(ref).catch(() => null);
+          if (!snap?.exists()) {
+            const payload: Record<string, any> = {
+              code: cleanCode,
+              credit_value: Math.max(1, Math.floor(c.credit_value || 0)),
+              is_used: Boolean(c.is_used),
+              used_by: c.is_used && c.used_by ? String(c.used_by) : null,
+              created_by: String(c.created_by || ADMIN_CREDENTIALS.email).slice(0, 200),
+              created_at: serverTimestamp(),
+            };
+            if (c.is_used) payload.used_at = serverTimestamp();
+            await setDoc(ref, payload).catch(() => {});
+          }
+        }
+
+        if (!alreadyInitialized) {
+          await setDoc(accountsSettingRef, {
+            initialized: true,
+            updatedAt: serverTimestamp(),
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.warn('Auto-seed accounts/promo_codes to Firestore warning:', err);
+      } finally {
+        this.accountsSeedingPromise = null;
+      }
+    })();
+
+    return this.accountsSeedingPromise;
+  }
+
   async fetchTeachersFromServer(): Promise<UserAccount[]> {
+    let expressTeachers: UserAccount[] | null = null;
     try {
       const headers = await this.getAdminHeaders();
       const res = await fetch('/api/teachers', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.teachers)) {
-          this.cachedTeachers = data.teachers;
-          localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(data.teachers));
-          return data.teachers;
-        }
+      const data = await parseJsonSafe(res);
+      if (res.ok && data?.success && Array.isArray(data.teachers)) {
+        expressTeachers = data.teachers;
       }
     } catch (err) {
-      console.warn('Could not fetch teachers from server, using local cache:', err);
+      console.warn('Could not fetch teachers from server, using Firestore/seed cache:', err);
     }
 
-    if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+    if (
+      auth.currentUser?.emailVerified &&
+      auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()
+    ) {
+      await this.ensureAccountsSeededToFirestore();
       const path = 'users';
       try {
         const snap = await getDocs(query(collection(db, path), orderBy('createdAt', 'desc')));
-        const list = snap.docs.map((d) => {
+        const fsList = snap.docs.map((d) => {
           const data = d.data();
           return {
             id: d.id,
@@ -226,6 +421,17 @@ class AuthService {
             updatedAt: toMillis(data.updatedAt),
           } as UserAccount;
         });
+
+        const mergedMap = new Map<string, UserAccount>();
+        for (const t of getBundledSeedTeachers()) mergedMap.set(t.id, t);
+        if (expressTeachers) {
+          for (const t of expressTeachers) mergedMap.set(t.id, t);
+        }
+        for (const t of fsList) mergedMap.set(t.id, t);
+
+        const list = Array.from(mergedMap.values()).sort(
+          (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+        );
         this.cachedTeachers = list;
         localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(list));
         return list;
@@ -234,16 +440,26 @@ class AuthService {
       }
     }
 
-    return this.getTeachers();
+    if (expressTeachers && expressTeachers.length > 0) {
+      this.cachedTeachers = expressTeachers;
+      localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(expressTeachers));
+      return expressTeachers;
+    }
+
+    const fallback = this.getTeachers();
+    return fallback.length > 0 ? fallback : getBundledSeedTeachers();
   }
 
   getTeachers(): UserAccount[] {
     try {
       const data = localStorage.getItem(TEACHERS_STORAGE_KEY);
-      if (data) return JSON.parse(data);
-      return this.cachedTeachers;
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return this.cachedTeachers.length > 0 ? this.cachedTeachers : getBundledSeedTeachers();
     } catch {
-      return this.cachedTeachers;
+      return this.cachedTeachers.length > 0 ? this.cachedTeachers : getBundledSeedTeachers();
     }
   }
 
@@ -255,34 +471,42 @@ class AuthService {
   getPromoCodes(): PromoCode[] {
     try {
       const data = localStorage.getItem(PROMO_CODES_STORAGE_KEY);
-      if (data) return JSON.parse(data);
-      return this.cachedPromoCodes;
+      if (data) {
+        const parsed = JSON.parse(data);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      return this.cachedPromoCodes.length > 0
+        ? this.cachedPromoCodes
+        : getBundledSeedPromoCodes();
     } catch {
-      return this.cachedPromoCodes;
+      return this.cachedPromoCodes.length > 0
+        ? this.cachedPromoCodes
+        : getBundledSeedPromoCodes();
     }
   }
 
   async fetchPromoCodes(): Promise<PromoCode[]> {
+    let expressCodes: PromoCode[] | null = null;
     try {
       const headers = await this.getAdminHeaders();
       const res = await fetch('/api/promo-codes', { headers });
-      if (res.ok) {
-        const data = await res.json();
-        if (data.success && Array.isArray(data.promoCodes)) {
-          this.cachedPromoCodes = data.promoCodes;
-          localStorage.setItem(PROMO_CODES_STORAGE_KEY, JSON.stringify(data.promoCodes));
-          return data.promoCodes;
-        }
+      const data = await parseJsonSafe(res);
+      if (res.ok && data?.success && Array.isArray(data.promoCodes)) {
+        expressCodes = data.promoCodes;
       }
     } catch (err) {
       console.warn('Could not fetch promo codes from server:', err);
     }
 
-    if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+    if (
+      auth.currentUser?.emailVerified &&
+      auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()
+    ) {
+      await this.ensureAccountsSeededToFirestore();
       const path = 'promo_codes';
       try {
         const snap = await getDocs(query(collection(db, path), orderBy('created_at', 'desc')));
-        const list = snap.docs.map((d) => {
+        const fsList = snap.docs.map((d) => {
           const data = d.data();
           return {
             code: data.code || d.id,
@@ -294,12 +518,29 @@ class AuthService {
             created_at: toMillis(data.created_at),
           } as PromoCode;
         });
+
+        const mergedMap = new Map<string, PromoCode>();
+        for (const c of getBundledSeedPromoCodes()) mergedMap.set(c.code, c);
+        if (expressCodes) {
+          for (const c of expressCodes) mergedMap.set(c.code.toUpperCase(), c);
+        }
+        for (const c of fsList) mergedMap.set(c.code.toUpperCase(), c);
+
+        const list = Array.from(mergedMap.values()).sort(
+          (a, b) => (b.created_at || 0) - (a.created_at || 0)
+        );
         this.cachedPromoCodes = list;
         localStorage.setItem(PROMO_CODES_STORAGE_KEY, JSON.stringify(list));
         return list;
       } catch (err) {
         handleFirestoreError(err, OperationType.LIST, path);
       }
+    }
+
+    if (expressCodes) {
+      this.cachedPromoCodes = expressCodes;
+      localStorage.setItem(PROMO_CODES_STORAGE_KEY, JSON.stringify(expressCodes));
+      return expressCodes;
     }
 
     return this.getPromoCodes();
@@ -462,6 +703,79 @@ class AuthService {
     }
   }
 
+  // Unified Email & Password Sign-In (supports both Teachers via Firebase Auth and Admin)
+  async signInWithEmailPassword(
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; message: string; user?: UserAccount }> {
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !password) {
+      return { success: false, message: 'Vui lòng nhập đầy đủ email và mật khẩu.' };
+    }
+
+    if (cleanEmail === ADMIN_CREDENTIALS.email.toLowerCase()) {
+      try {
+        const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+        return await this.syncFirebaseUserProfile(cred.user);
+      } catch (err: any) {
+        if (password === ADMIN_CREDENTIALS.password) {
+          return await this.loginAdmin(password);
+        }
+        return {
+          success: false,
+          message: 'Email hoặc mật khẩu không chính xác.',
+        };
+      }
+    }
+
+    try {
+      const cred = await signInWithEmailAndPassword(auth, cleanEmail, password);
+      return await this.syncFirebaseUserProfile(cred.user);
+    } catch (err: any) {
+      return {
+        success: false,
+        message: formatGoogleAuthError(err),
+      };
+    }
+  }
+
+  // Email & Password Registration for new teacher accounts
+  async registerWithEmailPassword(
+    fullName: string,
+    email: string,
+    password: string
+  ): Promise<{ success: boolean; message: string; user?: UserAccount }> {
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanName = fullName.trim().slice(0, 150) || cleanEmail.split('@')[0] || 'Giáo viên';
+
+    if (!cleanEmail || !password) {
+      return { success: false, message: 'Vui lòng nhập đầy đủ thông tin đăng ký.' };
+    }
+    if (password.length < 6) {
+      return { success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự.' };
+    }
+    if (cleanEmail === ADMIN_CREDENTIALS.email.toLowerCase()) {
+      return {
+        success: false,
+        message: 'Tài khoản này đã được đăng ký. Vui lòng chuyển sang Đăng nhập.',
+      };
+    }
+
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
+      try {
+        await updateProfile(cred.user, { displayName: cleanName });
+      } catch {}
+      sendEmailVerification(cred.user).catch(() => {});
+      return await this.syncFirebaseUserProfile(cred.user);
+    } catch (err: any) {
+      return {
+        success: false,
+        message: formatGoogleAuthError(err),
+      };
+    }
+  }
+
   // Sync Firebase User with Firestore /users/{uid} (credits: 10 for new users) & backend /api/auth/google
   // Deduplicates concurrent calls for the same UID (e.g. signInWithPopup + onAuthStateChanged firing together)
   async syncFirebaseUserProfile(fbUser: FirebaseUser): Promise<{
@@ -507,6 +821,7 @@ class AuthService {
         createdAt: 1700000000000,
       };
       this.setCurrentUser(adminUser);
+      this.ensureAccountsSeededToFirestore().catch(() => {});
       return {
         success: true,
         message: 'Đăng nhập Quản trị viên thành công',
@@ -617,7 +932,7 @@ class AuthService {
         finalUser = data.user;
       }
     } catch (err) {
-      console.warn('Server sync warning during Google sign-in:', err);
+      console.warn('Server sync warning during sign-in:', err);
     }
 
     this.setCurrentUser(finalUser);

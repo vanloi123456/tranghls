@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Home, ChevronRight, Play } from 'lucide-react';
 import { Header } from './components/Header';
 import { LeftSidebar } from './components/LeftSidebar';
 import { ControlDeck } from './components/ControlDeck';
@@ -18,12 +19,21 @@ import { AdminPanelModal } from './components/AdminPanelModal';
 import { RedeemCodeModal } from './components/RedeemCodeModal';
 import { ContentViewModal } from './components/ContentViewModal';
 
-// Storage, Auth & Firebase
+// Storage, Auth, Routing & Firebase
 import { storageService } from './services/storage';
 import { authService, ADMIN_PHONE } from './services/auth';
 import { auth } from './firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 import edtechBackdrop from './assets/images/edtech_canvas_backdrop_1794922302891.jpg';
+import {
+  ZONE_ROUTES,
+  buildHomePath,
+  buildZonePath,
+  buildItemPath,
+  parsePathname,
+  findItemByRouteSegment,
+  getZoneFromSectionId,
+} from './utils/routing';
 import {
   ContentItem,
   UserRole,
@@ -94,7 +104,16 @@ export default function App() {
 
   // Layout & UI
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [activeSection, setActiveSection] = useState('trang-chu');
+  const [activeZoneRoute, setActiveZoneRoute] = useState<ZoneType | null>(() => {
+    if (typeof window === 'undefined') return null;
+    return parsePathname(window.location.pathname).zone || null;
+  });
+  const [deepLinkBannerItem, setDeepLinkBannerItem] = useState<ContentItem | null>(null);
+  const [activeSection, setActiveSection] = useState<string>(() => {
+    if (typeof window === 'undefined') return 'trang-chu';
+    const parsed = parsePathname(window.location.pathname);
+    return parsed.zone ? ZONE_ROUTES[parsed.zone].sectionId : 'trang-chu';
+  });
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
   const normalizeItems = (storedItems: any[]): ContentItem[] =>
@@ -312,6 +331,103 @@ export default function App() {
     storageService.mutateTeacherAppData(activeTeacherId, itemId, payload);
   };
 
+  const pushUrlPath = useCallback((path: string) => {
+    if (typeof window === 'undefined') return;
+    if (window.location.pathname !== path) {
+      window.history.pushState({ path }, '', path);
+    }
+  }, []);
+
+  const closeAllContentModals = useCallback(() => {
+    setViewingItem(null);
+    setRunningApp(null);
+    setPlayingGame(null);
+    setRunningSimulation(null);
+  }, []);
+
+  const navigateToHome = useCallback(() => {
+    closeAllContentModals();
+    setSelectedItem(null);
+    setDeepLinkBannerItem(null);
+    setActiveZoneRoute(null);
+    setActiveSection('trang-chu');
+    pushUrlPath(buildHomePath());
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [closeAllContentModals, pushUrlPath]);
+
+  const navigateToZone = useCallback(
+    (zone: ZoneType) => {
+      closeAllContentModals();
+      setSelectedItem(null);
+      setDeepLinkBannerItem(null);
+      setActiveZoneRoute(zone);
+      const meta = ZONE_ROUTES[zone];
+      setActiveSection(meta.sectionId);
+      pushUrlPath(buildZonePath(zone));
+      const el = document.getElementById(meta.sectionId);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth' });
+      }
+    },
+    [closeAllContentModals, pushUrlPath]
+  );
+
+  // Sync deep-linked route after items load & handle browser Back/Forward (popstate)
+  useEffect(() => {
+    if (isLoading) return;
+
+    const syncFromCurrentPath = (isInitialLoad: boolean) => {
+      const parsed = parsePathname(window.location.pathname);
+      if (parsed.type === 'home') {
+        closeAllContentModals();
+        setSelectedItem(null);
+        setDeepLinkBannerItem(null);
+        setActiveZoneRoute(null);
+        setActiveSection('trang-chu');
+        return;
+      }
+
+      if (parsed.zone) {
+        setActiveZoneRoute(parsed.zone);
+        setActiveSection(ZONE_ROUTES[parsed.zone].sectionId);
+        if (isInitialLoad && parsed.type === 'zone') {
+          setTimeout(() => {
+            const el = document.getElementById(ZONE_ROUTES[parsed.zone!].sectionId);
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          }, 120);
+        }
+      }
+
+      if (parsed.type === 'item' && parsed.itemSlugOrId) {
+        const matched = findItemByRouteSegment(items, parsed.itemSlugOrId, parsed.zone);
+        if (matched) {
+          setActiveZoneRoute(matched.zone);
+          setActiveSection(ZONE_ROUTES[matched.zone].sectionId);
+          setSelectedItem(matched);
+          setDeepLinkBannerItem(matched);
+          if (isInitialLoad) {
+            setTimeout(() => {
+              const el = document.getElementById(ZONE_ROUTES[matched.zone].sectionId);
+              if (el) el.scrollIntoView({ behavior: 'smooth' });
+            }, 120);
+          }
+        }
+      } else {
+        closeAllContentModals();
+        setSelectedItem(null);
+        setDeepLinkBannerItem(null);
+      }
+    };
+
+    syncFromCurrentPath(true);
+
+    const onPopState = () => {
+      syncFromCurrentPath(false);
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, [isLoading, items, closeAllContentModals]);
+
   // Track active section for navigation
   useEffect(() => {
     const handleScroll = () => {
@@ -427,6 +543,10 @@ export default function App() {
     }
 
     setPendingLaunch(null);
+    setDeepLinkBannerItem(null);
+    setActiveZoneRoute(item.zone);
+    setActiveSection(ZONE_ROUTES[item.zone].sectionId);
+    pushUrlPath(buildItemPath(item));
     onAuthorizedOpen(item);
   };
 
@@ -511,8 +631,7 @@ export default function App() {
   };
 
   const handleResetView = () => {
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    setSelectedItem(null);
+    navigateToHome();
   };
 
   // Export / Import
@@ -598,8 +717,12 @@ export default function App() {
         activeSection={activeSection}
         onNavigate={(sectionId) => {
           if (sectionId === 'trang-chu') {
-            handleResetView();
-            setActiveSection('trang-chu');
+            navigateToHome();
+            return;
+          }
+          const zone = getZoneFromSectionId(sectionId);
+          if (zone) {
+            navigateToZone(zone);
             return;
           }
           const el = document.getElementById(sectionId);
@@ -619,7 +742,7 @@ export default function App() {
         }}
       />
 
-      {/* Fixed Sticky Top Header (Mobile Nav Header + Workspace Control Deck) */}
+      {/* Fixed Sticky Top Header (Mobile Nav Header + Workspace Control Deck + Breadcrumb Bar) */}
       <div className="sticky top-0 z-30 bg-white/82 backdrop-blur-xl border-b border-sky-200/75 shadow-xs">
         <Header onOpenMobileMenu={() => setIsMobileMenuOpen(true)} />
         <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3">
@@ -644,6 +767,105 @@ export default function App() {
             onToggleFullscreen={handleToggleFullscreen}
           />
         </div>
+
+        {/* Sticky Breadcrumb Path Bar: Trang chủ > Trang con > Nội dung trên link */}
+        {(() => {
+          const activeContentItem =
+            runningApp || playingGame || runningSimulation || viewingItem || selectedItem;
+          const resolvedZone =
+            activeContentItem?.zone ||
+            activeZoneRoute ||
+            getZoneFromSectionId(activeSection);
+          const resolvedZoneMeta = resolvedZone ? ZONE_ROUTES[resolvedZone] : null;
+          const currentLinkPath = activeContentItem
+            ? buildItemPath(activeContentItem)
+            : resolvedZone
+            ? buildZonePath(resolvedZone)
+            : buildHomePath();
+
+          return (
+            <div className="border-t border-sky-100/80 bg-sky-50/70">
+              <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-1.5 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <nav
+                  aria-label="Đường dẫn trang"
+                  className="flex items-center gap-1.5 flex-wrap text-slate-600"
+                >
+                  <button
+                    type="button"
+                    onClick={navigateToHome}
+                    className={`inline-flex items-center gap-1 font-semibold transition-colors cursor-pointer ${
+                      !resolvedZoneMeta && !activeContentItem
+                        ? 'text-sky-800'
+                        : 'text-slate-600 hover:text-sky-700'
+                    }`}
+                  >
+                    <Home className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Trang chủ</span>
+                  </button>
+
+                  {resolvedZoneMeta && (
+                    <>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <button
+                        type="button"
+                        onClick={() => navigateToZone(resolvedZoneMeta.zone)}
+                        className={`font-semibold transition-colors cursor-pointer ${
+                          !activeContentItem
+                            ? 'text-sky-800'
+                            : 'text-slate-600 hover:text-sky-700'
+                        }`}
+                      >
+                        {resolvedZoneMeta.label}
+                      </button>
+                    </>
+                  )}
+
+                  {activeContentItem && (
+                    <>
+                      <ChevronRight className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                      <span className="font-bold text-sky-900 truncate max-w-[260px] sm:max-w-sm">
+                        {activeContentItem.title}
+                      </span>
+                    </>
+                  )}
+                </nav>
+
+                <div className="flex items-center gap-2 flex-wrap">
+                  {deepLinkBannerItem &&
+                    !runningApp &&
+                    !playingGame &&
+                    !runningSimulation &&
+                    !viewingItem && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const item = deepLinkBannerItem;
+                          if (item.zone === 'games') {
+                            handleLaunchContentWithCredits(item, 'access', setPlayingGame);
+                          } else if (item.zone === 'simulations') {
+                            handleLaunchContentWithCredits(item, 'access', setRunningSimulation);
+                          } else {
+                            handleLaunchContentWithCredits(item, 'view', setRunningApp);
+                          }
+                        }}
+                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-[11px] font-bold shadow-2xs transition-colors cursor-pointer"
+                      >
+                        <Play className="w-3 h-3 fill-current" />
+                        <span>Mở nội dung</span>
+                      </button>
+                    )}
+
+                  <span
+                    className="hidden sm:inline font-mono text-[11px] text-slate-500 bg-white/80 px-2 py-0.5 rounded-md border border-sky-100 truncate max-w-[260px]"
+                    title={currentLinkPath}
+                  >
+                    {currentLinkPath}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Main Content Area */}
@@ -662,6 +884,7 @@ export default function App() {
               role={role}
               currentUser={currentUser}
               onOpenAuth={handleOpenAuth}
+              onSelectZone={() => navigateToZone('apps')}
               avatarUrl={branding.appsAvatar}
               onUploadAvatar={(url) => handleUpdateBranding({ ...branding, appsAvatar: url })}
               onRemoveAvatar={() => {
@@ -671,7 +894,6 @@ export default function App() {
               }}
               onEditItem={handleOpenEditModal}
               onDeleteItem={handlePromptDelete}
-              onViewApp={(item) => handleLaunchContentWithCredits(item, 'view', setViewingItem)}
               onLaunchApp={(item) => handleLaunchContentWithCredits(item, 'view', setRunningApp)}
             />
 
@@ -680,6 +902,7 @@ export default function App() {
               items={gameItems}
               role={role}
               currentUser={currentUser}
+              onSelectZone={() => navigateToZone('games')}
               avatarUrl={branding.gamesAvatar}
               onUploadAvatar={(url) => handleUpdateBranding({ ...branding, gamesAvatar: url })}
               onRemoveAvatar={() => {
@@ -698,6 +921,7 @@ export default function App() {
               items={simItems}
               role={role}
               currentUser={currentUser}
+              onSelectZone={() => navigateToZone('simulations')}
               avatarUrl={branding.simsAvatar}
               onUploadAvatar={(url) => handleUpdateBranding({ ...branding, simsAvatar: url })}
               onRemoveAvatar={() => {
@@ -720,7 +944,18 @@ export default function App() {
       <Footer />
 
       {/* Modals & Dialogs */}
-      <ContentViewModal item={viewingItem} onClose={() => setViewingItem(null)} />
+      <ContentViewModal
+        item={viewingItem}
+        onNavigateHome={navigateToHome}
+        onNavigateZone={() =>
+          viewingItem ? navigateToZone(viewingItem.zone) : navigateToHome()
+        }
+        onClose={() => {
+          const z = viewingItem?.zone;
+          setViewingItem(null);
+          if (z) pushUrlPath(buildZonePath(z));
+        }}
+      />
 
       <AddEditContentModal
         isOpen={isAddEditModalOpen}
@@ -747,7 +982,12 @@ export default function App() {
         initialAppData={runningApp ? teacherAppData[runningApp.id] : undefined}
         externalSyncEvent={externalSyncEvent}
         onStorageMutation={handleTeacherStorageMutation}
-        onClose={() => setRunningApp(null)}
+        onNavigateHome={navigateToHome}
+        onNavigateZone={() => navigateToZone('apps')}
+        onClose={() => {
+          setRunningApp(null);
+          pushUrlPath(buildZonePath('apps'));
+        }}
       />
 
       <GamePlayerModal
@@ -756,7 +996,12 @@ export default function App() {
         initialAppData={playingGame ? teacherAppData[playingGame.id] : undefined}
         externalSyncEvent={externalSyncEvent}
         onStorageMutation={handleTeacherStorageMutation}
-        onClose={() => setPlayingGame(null)}
+        onNavigateHome={navigateToHome}
+        onNavigateZone={() => navigateToZone('games')}
+        onClose={() => {
+          setPlayingGame(null);
+          pushUrlPath(buildZonePath('games'));
+        }}
       />
 
       <SimulationPlayerModal
@@ -765,7 +1010,12 @@ export default function App() {
         initialAppData={runningSimulation ? teacherAppData[runningSimulation.id] : undefined}
         externalSyncEvent={externalSyncEvent}
         onStorageMutation={handleTeacherStorageMutation}
-        onClose={() => setRunningSimulation(null)}
+        onNavigateHome={navigateToHome}
+        onNavigateZone={() => navigateToZone('simulations')}
+        onClose={() => {
+          setRunningSimulation(null);
+          pushUrlPath(buildZonePath('simulations'));
+        }}
       />
 
       <AuthModal

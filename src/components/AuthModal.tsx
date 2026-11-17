@@ -3,13 +3,11 @@ import {
   X,
   Lock,
   Mail,
-  ShieldCheck,
+  User,
   CheckCircle2,
   AlertCircle,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
-import { authService, ADMIN_CREDENTIALS } from '../services/auth';
+import { authService } from '../services/auth';
 import { UserAccount } from '../types';
 
 interface AuthModalProps {
@@ -23,11 +21,12 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSuccess,
   onClose,
 }) => {
+  const [isRegisterMode, setIsRegisterMode] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminEmail, setAdminEmail] = useState('');
-  const [adminPassword, setAdminPassword] = useState('');
-  const [isAdminLoading, setIsAdminLoading] = useState(false);
+  const [isFormLoading, setIsFormLoading] = useState(false);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
@@ -36,9 +35,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     if (isOpen) {
       setErrorMsg('');
       setSuccessMsg('');
-      setAdminEmail('');
-      setAdminPassword('');
-      setShowAdminLogin(false);
+      setIsRegisterMode(false);
+      setFullName('');
+      setEmail('');
+      setPassword('');
     }
   }, [isOpen]);
 
@@ -63,27 +63,27 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
-  const handleAdminLogin = async (e: React.FormEvent) => {
+  const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
     setSuccessMsg('');
+    setIsFormLoading(true);
 
-    if (adminEmail.trim().toLowerCase() !== ADMIN_CREDENTIALS.email.toLowerCase()) {
-      setErrorMsg('Email quản trị viên không chính xác.');
-      return;
-    }
-
-    setIsAdminLoading(true);
     try {
-      const res = await authService.loginAdmin(adminPassword);
+      const res = isRegisterMode
+        ? await authService.registerWithEmailPassword(fullName, email, password)
+        : await authService.signInWithEmailPassword(email, password);
+
       if (res.success && res.user) {
         onSuccess(res.user);
         onClose();
       } else {
-        setErrorMsg(res.message);
+        setErrorMsg(res.message || 'Không thể đăng nhập. Vui lòng kiểm tra lại thông tin.');
       }
+    } catch (err: any) {
+      setErrorMsg(err?.message || 'Đã xảy ra lỗi khi xác thực tài khoản.');
     } finally {
-      setIsAdminLoading(false);
+      setIsFormLoading(false);
     }
   };
 
@@ -96,6 +96,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-sky-100 overflow-hidden my-6"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-label="Đăng nhập"
       >
         {/* Header */}
         <div className="bg-gradient-to-r from-sky-50 via-cyan-50 to-white px-6 py-4 border-b border-sky-100 flex items-center justify-between gap-3">
@@ -103,6 +104,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             Đăng nhập
           </h2>
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
             title="Đóng"
@@ -126,12 +128,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {/* Main Google Sign-In Section */}
-        <div className="p-6 space-y-4">
+        {/* Unified Sign-In Options: Google Account Picker + Email & Password */}
+        <div className="p-6 space-y-5">
+          {/* Option 1: Google Account Selection */}
           <button
             type="button"
             onClick={handleGoogleLogin}
-            disabled={isGoogleLoading}
+            disabled={isGoogleLoading || isFormLoading}
             className="w-full py-3 px-4 rounded-2xl border-2 border-slate-200 hover:border-sky-400 bg-white hover:bg-sky-50/40 text-slate-800 font-bold text-sm shadow-xs hover:shadow-md transition-all flex items-center justify-center gap-3 cursor-pointer disabled:opacity-60"
           >
             <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
@@ -153,74 +156,104 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               />
             </svg>
             <span>
-              {isGoogleLoading ? 'Đang kết nối...' : 'Đăng nhập bằng Google'}
+              {isGoogleLoading ? 'Đang kết nối...' : 'Chọn tài khoản Google'}
             </span>
           </button>
 
-          {/* Secondary Admin Access Toggle */}
-          <div className="pt-2 border-t border-slate-100">
+          {/* Divider */}
+          <div className="relative flex items-center">
+            <div className="flex-grow border-t border-slate-200" />
+            <span className="px-3 text-[11px] font-semibold uppercase tracking-wider text-slate-400 bg-white">
+              Hoặc
+            </span>
+            <div className="flex-grow border-t border-slate-200" />
+          </div>
+
+          {/* Option 2: Email & Password Form (no pre-filled admin email hints) */}
+          <form onSubmit={handleEmailPasswordSubmit} className="space-y-3.5">
+            {isRegisterMode && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  Họ và tên
+                </label>
+                <div className="relative">
+                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                  <input
+                    type="text"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    placeholder="Nhập họ và tên"
+                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                    required
+                  />
+                </div>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Email
+              </label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="Nhập địa chỉ email"
+                  autoComplete="email"
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                  required
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-700 mb-1">
+                Mật khẩu
+              </label>
+              <div className="relative">
+                <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="Nhập mật khẩu"
+                  autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
+                  className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
+                  required
+                />
+              </div>
+            </div>
+
             <button
-              type="button"
-              onClick={() => setShowAdminLogin(!showAdminLogin)}
-              className="w-full flex items-center justify-between text-xs font-semibold text-slate-500 hover:text-slate-800 py-1 cursor-pointer"
+              type="submit"
+              disabled={isFormLoading || isGoogleLoading}
+              className="w-full py-2.5 px-4 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 active:scale-[0.99] rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-60"
             >
-              <span className="flex items-center gap-1.5">
-                <ShieldCheck className="w-3.5 h-3.5 text-sky-600" />
-                <span>Quản trị viên</span>
-              </span>
-              {showAdminLogin ? (
-                <ChevronUp className="w-4 h-4" />
-              ) : (
-                <ChevronDown className="w-4 h-4" />
-              )}
+              {isFormLoading
+                ? 'Đang xác thực...'
+                : isRegisterMode
+                ? 'Đăng ký & Đăng nhập'
+                : 'Đăng nhập'}
             </button>
 
-            {showAdminLogin && (
-              <form
-                onSubmit={handleAdminLogin}
-                className="mt-3 space-y-3 p-3.5 bg-slate-50 rounded-2xl border border-slate-200"
+            <div className="text-center pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRegisterMode(!isRegisterMode);
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className="text-xs font-semibold text-sky-700 hover:text-sky-900 hover:underline cursor-pointer"
               >
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Nên dùng nút <strong>Đăng nhập bằng Google</strong> ({ADMIN_CREDENTIALS.email}) để đồng bộ ứng dụng lên Firestore trên Vercel.
-                </p>
-                <div>
-                  <div className="relative">
-                    <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="email"
-                      value={adminEmail}
-                      onChange={(e) => setAdminEmail(e.target.value)}
-                      placeholder="Email"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <div className="relative">
-                    <Lock className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                    <input
-                      type="password"
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      placeholder="Mật khẩu"
-                      className="w-full pl-9 pr-3 py-2 rounded-xl border border-slate-200 bg-white text-xs focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                      required
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={isAdminLoading}
-                  className="w-full py-2 px-4 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-xl transition-colors cursor-pointer"
-                >
-                  {isAdminLoading ? 'Đang xác thực...' : 'Đăng nhập'}
-                </button>
-              </form>
-            )}
-          </div>
+                {isRegisterMode
+                  ? 'Đã có tài khoản? Quay lại đăng nhập'
+                  : 'Chưa có tài khoản? Đăng ký bằng Email'}
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

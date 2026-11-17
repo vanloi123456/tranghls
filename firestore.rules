@@ -32,7 +32,7 @@ service cloud.firestore {
     }
 
     function isOwner(userId) {
-      return isVerified() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
     function isBootstrappedAdmin() {
@@ -174,7 +174,7 @@ service cloud.firestore {
       return data.keys().hasAll(['entries', 'updatedAt']) &&
         data.keys().hasOnly(['entries', 'updatedAt']) &&
         data.entries is map &&
-        data.entries.size() <= 150 &&
+        data.entries.size() <= 500 &&
         data.updatedAt is timestamp;
     }
 
@@ -191,16 +191,25 @@ service cloud.firestore {
       allow list: if isBootstrappedAdmin();
 
       allow create: if isValidId(userId) &&
-        isOwner(userId) &&
         isValidUserProfile(incoming()) &&
-        incoming().uid == request.auth.uid &&
-        incoming().email.lower() == request.auth.token.email.lower() &&
+        incoming().uid == userId &&
         incoming().role == 'teacher' &&
-        incoming().credits == 5 &&
-        (!('lastFreeResetAt' in incoming()) || incoming().lastFreeResetAt == request.time) &&
-        !('lastRedeemedCode' in incoming()) &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time;
+        incoming().updatedAt == request.time &&
+        (
+          (
+            isOwner(userId) &&
+            incoming().email.lower() == request.auth.token.email.lower() &&
+            incoming().credits == 5 &&
+            (!('lastFreeResetAt' in incoming()) || incoming().lastFreeResetAt == request.time) &&
+            !('lastRedeemedCode' in incoming())
+          ) ||
+          (
+            isAdmin() &&
+            incoming().credits >= 0 &&
+            (!('lastFreeResetAt' in incoming()) || incoming().lastFreeResetAt is timestamp)
+          )
+        );
 
       allow update: if isValidId(userId) &&
         isValidUserProfile(incoming()) &&
@@ -210,10 +219,10 @@ service cloud.firestore {
         incoming().createdAt == existing().createdAt &&
         incoming().updatedAt == request.time &&
         (
-          // Action 1: Admin top-up, credit adjustment, or issuing activation code to teacher
+          // Action 1: Admin top-up, credit adjustment, seed sync, or issuing activation code to teacher
           (
             isAdmin() &&
-            incoming().diff(existing()).affectedKeys().hasOnly(['credits', 'lastRedeemedCode', 'updatedAt'])
+            incoming().diff(existing()).affectedKeys().hasOnly(['credits', 'lastRedeemedCode', 'lastFreeResetAt', 'fullName', 'photoURL', 'updatedAt'])
           ) ||
           // Action 2: Owner syncs display name / photo on login
           (
@@ -266,9 +275,22 @@ service cloud.firestore {
       }
     }
 
+    // --- Collection: /admin_app_data/{itemId} ---
+    match /admin_app_data/{itemId} {
+      allow get, list: if isValidId(itemId) && isAdmin();
+      allow create: if isValidId(itemId) && isAdmin() &&
+        isValidTeacherAppData(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(itemId) && isAdmin() &&
+        isValidTeacherAppData(incoming()) &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['entries', 'updatedAt']);
+      allow delete: if isValidId(itemId) && isAdmin();
+    }
+
     // --- Collection: /promo_codes/{codeId} ---
     match /promo_codes/{codeId} {
-      allow get: if isValidPromoCodeId(codeId) && isVerified();
+      allow get: if isValidPromoCodeId(codeId) && isSignedIn();
       allow list: if isBootstrappedAdmin();
 
       allow create: if isValidPromoCodeId(codeId) &&
@@ -290,7 +312,7 @@ service cloud.firestore {
         );
 
       allow update: if isValidPromoCodeId(codeId) &&
-        isVerified() &&
+        isSignedIn() &&
         isValidPromoCode(incoming()) &&
         incoming().code == existing().code &&
         incoming().credit_value == existing().credit_value &&
@@ -339,9 +361,9 @@ service cloud.firestore {
       allow delete: if isValidId(itemId) && isAdmin();
     }
 
-    // --- Collection: /site_settings/{settingId} (Branding & catalog initialization state) ---
+    // --- Collection: /site_settings/{settingId} (Branding, catalog & accounts initialization state) ---
     match /site_settings/{settingId} {
-      allow get: if settingId in ['branding', 'catalog'];
+      allow get: if settingId in ['branding', 'catalog', 'accounts'];
       allow list: if false;
 
       allow create: if isAdmin() && (
@@ -351,7 +373,7 @@ service cloud.firestore {
           incoming().updatedAt == request.time
         ) ||
         (
-          settingId == 'catalog' &&
+          settingId in ['catalog', 'accounts'] &&
           isValidCatalogSetting(incoming()) &&
           incoming().updatedAt == request.time
         )
@@ -371,14 +393,14 @@ service cloud.firestore {
           ])
         ) ||
         (
-          settingId == 'catalog' &&
+          settingId in ['catalog', 'accounts'] &&
           isValidCatalogSetting(incoming()) &&
           incoming().updatedAt == request.time &&
           incoming().diff(existing()).affectedKeys().hasOnly(['initialized', 'updatedAt'])
         )
       );
 
-      allow delete: if isAdmin() && settingId in ['branding', 'catalog'];
+      allow delete: if isAdmin() && settingId in ['branding', 'catalog', 'accounts'];
     }
   }
 }

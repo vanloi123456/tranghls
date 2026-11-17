@@ -180,6 +180,8 @@ function buildFirestoreUpdatePayload(item: ContentItem): Record<string, any> {
 class StorageService {
   private dbPromise: Promise<IDBDatabase> | null = null;
   private seedingPromise: Promise<void> | null = null;
+  private pendingAppWrites = new Map<string, Promise<void>>();
+  private appDataSnapshots = new Map<string, Record<string, string>>();
 
   private getDB(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
@@ -692,24 +694,55 @@ class StorageService {
   public readonly clientId: string =
     'client_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8);
 
+  private isTeacherFirestoreWritable(teacherId: string): boolean {
+    if (!VALID_ID_REGEX.test(teacherId)) return false;
+    if (teacherId === 'admin_root') {
+      return isFirebaseAdminSignedIn();
+    }
+    return Boolean(auth.currentUser && auth.currentUser.uid === teacherId);
+  }
+
+  private getTeacherAppDocRef(teacherId: string, itemId: string) {
+    if (teacherId === 'admin_root') {
+      return doc(db, 'admin_app_data', itemId);
+    }
+    return doc(db, 'users', teacherId, 'app_data', itemId);
+  }
+
   async getTeacherAppData(teacherId: string): Promise<Record<string, Record<string, string>>> {
     if (!teacherId) return {};
     const cacheKey = `hoclieuso_teacher_data_${teacherId}`;
+    const merged: Record<string, Record<string, string>> = {};
 
+    // Start from local cache
     try {
-      const res = await fetch(`/api/teacher-app-data/${encodeURIComponent(teacherId)}`);
-      const json = await parseJsonSafe(res);
-      if (res.ok && json?.success && json.data && typeof json.data === 'object') {
-        try {
-          localStorage.setItem(cacheKey, JSON.stringify(json.data));
-        } catch {}
-        return json.data;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (parsed && typeof parsed === 'object') {
+          Object.assign(merged, parsed);
+        }
       }
     } catch {}
 
-    if (auth.currentUser && auth.currentUser.uid === teacherId && VALID_ID_REGEX.test(teacherId)) {
+    // Fetch Express server data & Cloud Firestore data in parallel
+    const expressPromise = fetch(`/api/teacher-app-data/${encodeURIComponent(teacherId)}`)
+      .then(async (res) => {
+        const json = await parseJsonSafe(res);
+        return res.ok && json?.success && json.data && typeof json.data === 'object'
+          ? (json.data as Record<string, Record<string, string>>)
+          : null;
+      })
+      .catch(() => null);
+
+    const firestorePromise = (async (): Promise<Record<string, Record<string, string>> | null> => {
+      if (!this.isTeacherFirestoreWritable(teacherId)) return null;
       try {
-        const snap = await getDocs(collection(db, 'users', teacherId, 'app_data'));
+        const colRef =
+          teacherId === 'admin_root'
+            ? collection(db, 'admin_app_data')
+            : collection(db, 'users', teacherId, 'app_data');
+        const snap = await getDocs(colRef);
         const map: Record<string, Record<string, string>> = {};
         snap.forEach((docSnap) => {
           const entries = docSnap.data()?.entries;
@@ -717,21 +750,73 @@ class StorageService {
             map[docSnap.id] = entries;
           }
         });
-        if (Object.keys(map).length > 0) {
-          try {
-            localStorage.setItem(cacheKey, JSON.stringify(map));
-          } catch {}
-          return map;
-        }
-      } catch {}
+        return map;
+      } catch (err) {
+        console.warn('Firestore teacher app_data read warning:', err);
+        return null;
+      }
+    })();
+
+    const [expressMap, fsMap] = await Promise.all([expressPromise, firestorePromise]);
+
+    if (expressMap) {
+      for (const [k, v] of Object.entries(expressMap)) {
+        merged[k] = { ...(merged[k] || {}), ...(v || {}) };
+      }
     }
 
-    try {
-      const cached = localStorage.getItem(cacheKey);
-      return cached ? JSON.parse(cached) : {};
-    } catch {
-      return {};
+    if (fsMap) {
+      // Cloud Firestore takes precedence for cross-browser / cross-PC sync on Vercel & web
+      for (const [k, v] of Object.entries(fsMap)) {
+        merged[k] = { ...(merged[k] || {}), ...(v || {}) };
+      }
+      // Mirror any Express-only saved work up to Firestore once
+      for (const [itemId, itemEntries] of Object.entries(merged)) {
+        if (itemEntries && Object.keys(itemEntries).length > 0 && !fsMap[itemId]) {
+          this.appDataSnapshots.set(`${teacherId}:${itemId}`, { ...itemEntries });
+          this.enqueueFirestoreAppWrite(teacherId, itemId);
+        }
+      }
     }
+
+    // Update in-memory snapshots & localStorage cache
+    for (const [itemId, itemEntries] of Object.entries(merged)) {
+      this.appDataSnapshots.set(`${teacherId}:${itemId}`, { ...itemEntries });
+    }
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(merged));
+    } catch {}
+
+    return merged;
+  }
+
+  private enqueueFirestoreAppWrite(teacherId: string, itemId: string): void {
+    if (!this.isTeacherFirestoreWritable(teacherId) || !VALID_ID_REGEX.test(itemId)) {
+      return;
+    }
+
+    const opKey = `${teacherId}:${itemId}`;
+    const prevQueue = this.pendingAppWrites.get(opKey) || Promise.resolve();
+
+    const nextWrite = prevQueue
+      .catch(() => {})
+      .then(async () => {
+        const latestMap = this.appDataSnapshots.get(opKey) || {};
+        const boundedEntries: Record<string, string> = {};
+        for (const k of Object.keys(latestMap).slice(0, 500)) {
+          boundedEntries[k] = String(latestMap[k] ?? '');
+        }
+        const docRef = this.getTeacherAppDocRef(teacherId, itemId);
+        await setDoc(docRef, {
+          entries: boundedEntries,
+          updatedAt: serverTimestamp(),
+        });
+      })
+      .catch((err) => {
+        console.warn('Firestore teacher app_data save warning:', err);
+      });
+
+    this.pendingAppWrites.set(opKey, nextWrite);
   }
 
   async mutateTeacherAppData(
@@ -746,12 +831,16 @@ class StorageService {
   ): Promise<Record<string, string> | null> {
     if (!teacherId || !itemId) return null;
 
+    const opKey = `${teacherId}:${itemId}`;
     const cacheKey = `hoclieuso_teacher_data_${teacherId}`;
     let updatedItemMap: Record<string, string> = {};
+
     try {
       const raw = localStorage.getItem(cacheKey);
       const cachedAll: Record<string, Record<string, string>> = raw ? JSON.parse(raw) : {};
-      const itemMap = { ...(cachedAll[itemId] || {}) };
+      const baseMap = this.appDataSnapshots.get(opKey) || cachedAll[itemId] || {};
+      const itemMap = { ...baseMap };
+
       if (payload.op === 'set' && typeof payload.key === 'string') {
         itemMap[payload.key] = String(payload.value ?? '');
       } else if (payload.op === 'remove' && typeof payload.key === 'string') {
@@ -762,26 +851,14 @@ class StorageService {
         for (const k of Object.keys(itemMap)) delete itemMap[k];
         Object.assign(itemMap, payload.data);
       }
+
       updatedItemMap = itemMap;
+      this.appDataSnapshots.set(opKey, { ...itemMap });
       cachedAll[itemId] = itemMap;
       localStorage.setItem(cacheKey, JSON.stringify(cachedAll));
     } catch {}
 
-    if (
-      auth.currentUser &&
-      auth.currentUser.uid === teacherId &&
-      VALID_ID_REGEX.test(teacherId) &&
-      VALID_ID_REGEX.test(itemId)
-    ) {
-      const boundedEntries: Record<string, string> = {};
-      for (const k of Object.keys(updatedItemMap).slice(0, 150)) {
-        boundedEntries[k] = String(updatedItemMap[k] ?? '');
-      }
-      setDoc(doc(db, 'users', teacherId, 'app_data', itemId), {
-        entries: boundedEntries,
-        updatedAt: serverTimestamp(),
-      }).catch(() => {});
-    }
+    this.enqueueFirestoreAppWrite(teacherId, itemId);
 
     try {
       const res = await fetch(

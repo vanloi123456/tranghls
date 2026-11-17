@@ -257,6 +257,12 @@
       },
       "description": "Lưu dữ liệu làm việc riêng của giáo viên cho từng ứng dụng tương tác"
     },
+    "/admin_app_data/{itemId}": {
+      "schema": {
+        "$ref": "#/entities/TeacherAppData"
+      },
+      "description": "Lưu dữ liệu làm việc riêng của Quản trị viên cho từng ứng dụng tương tác trên mọi thiết bị"
+    },
     "/promo_codes/{codeId}": {
       "schema": {
         "$ref": "#/entities/PromoCode"
@@ -273,7 +279,7 @@
       "schema": {
         "$ref": "#/entities/SiteBrandingSetting"
       },
-      "description": "Lưu hình đại diện khu vực (branding) và trạng thái khởi tạo danh mục (catalog)"
+      "description": "Lưu hình đại diện khu vực (branding), trạng thái khởi tạo danh mục (catalog) và tài khoản/mã kích hoạt (accounts)"
     }
   }
 }

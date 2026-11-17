@@ -1,5 +1,15 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { X, Maximize2, Minimize2, RotateCcw, Sparkles, Gamepad2, CloudCheck } from 'lucide-react';
+import {
+  X,
+  Maximize2,
+  Minimize2,
+  RotateCcw,
+  Sparkles,
+  Gamepad2,
+  CloudCheck,
+  ChevronRight,
+  Home,
+} from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { ContentItem } from '../types';
 import { generateSandboxHtml } from '../utils/embed';
@@ -13,6 +23,8 @@ interface GamePlayerModalProps {
     itemId: string,
     payload: { op: 'set' | 'remove' | 'clear'; key?: string; value?: string }
   ) => void;
+  onNavigateHome?: () => void;
+  onNavigateZone?: () => void;
   onClose: () => void;
 }
 
@@ -22,6 +34,8 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
   initialAppData,
   externalSyncEvent,
   onStorageMutation,
+  onNavigateHome,
+  onNavigateZone,
   onClose,
 }) => {
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -32,6 +46,19 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
   const initialDataRef = useRef<Record<string, string>>({});
 
   initialDataRef.current = initialAppData || {};
+
+  const pushLatestDataToIframe = (data?: Record<string, string>) => {
+    if (!item || !teacherId || !data) return;
+    iframeRef.current?.contentWindow?.postMessage(
+      {
+        type: 'TEACHER_APP_STORAGE_EXTERNAL_SYNC',
+        teacherId,
+        itemId: item.id,
+        data,
+      },
+      '*'
+    );
+  };
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -67,17 +94,14 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
   useEffect(() => {
     if (!externalSyncEvent || !item || !teacherId) return;
     if (externalSyncEvent.itemId !== item.id) return;
-    iframeRef.current?.contentWindow?.postMessage(
-      {
-        type: 'TEACHER_APP_STORAGE_EXTERNAL_SYNC',
-        teacherId,
-        itemId: item.id,
-        data: externalSyncEvent.data,
-      },
-      '*'
-    );
+    pushLatestDataToIframe(externalSyncEvent.data);
     setSyncStatus('saved');
   }, [externalSyncEvent, item?.id, teacherId]);
+
+  useEffect(() => {
+    if (!item || !teacherId || !initialAppData) return;
+    pushLatestDataToIframe(initialAppData);
+  }, [initialAppData, item?.id, teacherId]);
 
   const sandboxContent = useMemo(() => {
     if (!item?.embedCode) return '';
@@ -131,12 +155,32 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
             <Gamepad2 className="w-5 h-5" />
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs uppercase tracking-wider text-sky-400 font-semibold">
-                Không gian học liệu số
+            <nav
+              aria-label="Breadcrumb"
+              className="flex items-center gap-1 text-[11px] text-sky-300/90 font-medium flex-wrap mb-0.5"
+            >
+              <button
+                type="button"
+                onClick={onNavigateHome || onClose}
+                className="inline-flex items-center gap-1 hover:text-white transition-colors cursor-pointer"
+              >
+                <Home className="w-3 h-3" />
+                <span>Trang chủ</span>
+              </button>
+              <ChevronRight className="w-3 h-3 text-slate-500 shrink-0" />
+              <button
+                type="button"
+                onClick={onNavigateZone || onClose}
+                className="hover:text-white transition-colors cursor-pointer"
+              >
+                Học Liệu Số
+              </button>
+              <ChevronRight className="w-3 h-3 text-slate-500 shrink-0" />
+              <span className="text-sky-200 font-semibold truncate max-w-[200px]">
+                {item.title}
               </span>
               {teacherId && (
-                <span className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                <span className="ml-1 inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
                   <CloudCheck className="w-3 h-3" />
                   <span>
                     {syncStatus === 'saving'
@@ -145,7 +189,7 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
                   </span>
                 </span>
               )}
-            </div>
+            </nav>
             <h2 className="text-base font-bold text-white font-display truncate max-w-lg">
               {item.title}
             </h2>
@@ -199,6 +243,7 @@ export const GamePlayerModal: React.FC<GamePlayerModalProps> = ({
             ref={iframeRef}
             key={`${item.id}_${refreshKey}_${teacherId || 'guest'}`}
             srcDoc={sandboxContent}
+            onLoad={() => pushLatestDataToIframe(initialDataRef.current)}
             title={item.title}
             sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation allow-autoplay allow-downloads allow-modals"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"

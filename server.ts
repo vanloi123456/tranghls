@@ -11,11 +11,13 @@ const PORT = Number(process.env.PORT) || 3000;
 
 const DATA_DIR = path.resolve(__dirname, 'data');
 const TEACHERS_FILE = path.join(DATA_DIR, 'teachers.json');
+const PUBLIC_SEED_TEACHERS_FILE = path.resolve(__dirname, 'public', 'seed-teachers.json');
 const BRANDING_FILE = path.join(DATA_DIR, 'branding.json');
 const ITEMS_FILE = path.join(DATA_DIR, 'items.json');
 const PUBLIC_SEED_ITEMS_FILE = path.resolve(__dirname, 'public', 'seed-items.json');
 const TEACHER_APP_DATA_FILE = path.join(DATA_DIR, 'teacher_app_data.json');
 const PROMO_CODES_FILE = path.join(DATA_DIR, 'promo_codes.json');
+const PUBLIC_SEED_PROMO_CODES_FILE = path.resolve(__dirname, 'public', 'seed-promo-codes.json');
 const FIREBASE_CONFIG_FILE = path.resolve(__dirname, 'firebase-applet-config.json');
 
 const INITIAL_FREE_CREDITS = 5;
@@ -178,10 +180,20 @@ function getStoredTeachers(): StoredTeacher[] {
 }
 
 function saveStoredTeachers(teachers: StoredTeacher[]): void {
+  const serialized = JSON.stringify(teachers, null, 2);
   try {
-    fs.writeFileSync(TEACHERS_FILE, JSON.stringify(teachers, null, 2), 'utf-8');
+    fs.writeFileSync(TEACHERS_FILE, serialized, 'utf-8');
   } catch (err) {
     console.error('Error writing teachers.json:', err);
+  }
+  try {
+    const publicDir = path.dirname(PUBLIC_SEED_TEACHERS_FILE);
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    fs.writeFileSync(PUBLIC_SEED_TEACHERS_FILE, serialized, 'utf-8');
+  } catch (err) {
+    console.warn('Error syncing public/seed-teachers.json:', err);
   }
 }
 
@@ -198,10 +210,20 @@ function getStoredPromoCodes(): StoredPromoCode[] {
 }
 
 function saveStoredPromoCodes(codes: StoredPromoCode[]): void {
+  const serialized = JSON.stringify(codes, null, 2);
   try {
-    fs.writeFileSync(PROMO_CODES_FILE, JSON.stringify(codes, null, 2), 'utf-8');
+    fs.writeFileSync(PROMO_CODES_FILE, serialized, 'utf-8');
   } catch (err) {
     console.error('Error writing promo_codes.json:', err);
+  }
+  try {
+    const publicDir = path.dirname(PUBLIC_SEED_PROMO_CODES_FILE);
+    if (!fs.existsSync(publicDir)) {
+      fs.mkdirSync(publicDir, { recursive: true });
+    }
+    fs.writeFileSync(PUBLIC_SEED_PROMO_CODES_FILE, serialized, 'utf-8');
+  } catch (err) {
+    console.warn('Error syncing public/seed-promo-codes.json:', err);
   }
 }
 
