@@ -17,20 +17,19 @@ import {
   Home,
   Camera,
   PlusCircle,
-  KeyRound,
-  Copy,
-  Check,
+  RefreshCw,
+  AlertCircle,
 } from 'lucide-react';
 import { authService } from '../services/auth';
 import { storageService } from '../services/storage';
-import { UserAccount, SiteBranding, PromoCode } from '../types';
+import { UserAccount, SiteBranding } from '../types';
 import { processImageFile } from '../utils/image';
 
 interface AdminPanelModalProps {
   isOpen: boolean;
   onClose: () => void;
   onLogout: () => void;
-  initialTab?: 'teachers' | 'promo_codes' | 'branding';
+  initialTab?: 'teachers' | 'branding';
   branding: SiteBranding;
   onUpdateBranding: (branding: SiteBranding) => void;
   contentCounts: {
@@ -38,6 +37,21 @@ interface AdminPanelModalProps {
     games: number;
     simulations: number;
   };
+}
+
+function formatDateTime(ts?: number): string {
+  if (!ts || !Number.isFinite(ts)) return '—';
+  try {
+    return new Date(ts).toLocaleString('vi-VN', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return '—';
+  }
 }
 
 export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
@@ -49,49 +63,53 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
   onUpdateBranding,
   contentCounts,
 }) => {
-  const [activeTab, setActiveTab] = useState<'teachers' | 'promo_codes' | 'branding'>(
-    initialTab
-  );
+  const [activeTab, setActiveTab] = useState<'teachers' | 'branding'>(initialTab);
   const [teachers, setTeachers] = useState<UserAccount[]>(() => authService.getTeachers());
-  const [promoCodes, setPromoCodes] = useState<PromoCode[]>(() =>
-    authService.getPromoCodes()
-  );
   const [searchQuery, setSearchQuery] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(() =>
+    authService.isFirebaseAdminConnected()
+  );
+  const [isConnectingGoogle, setIsConnectingGoogle] = useState(false);
+  const [isRefreshingList, setIsRefreshingList] = useState(false);
 
-  // Promo code creation form states
-  const [newCodeInput, setNewCodeInput] = useState('');
-  const [newCodeCredits, setNewCodeCredits] = useState<number>(30);
-  const [isCreatingCode, setIsCreatingCode] = useState(false);
-  const [copiedCode, setCopiedCode] = useState<string | null>(null);
-
-  // Per-teacher direct code issuance state
-  const [issueTargetId, setIssueTargetId] = useState<string | null>(null);
-  const [issueCodeInput, setIssueCodeInput] = useState('');
-  const [issueCreditsInput, setIssueCreditsInput] = useState<number>(30);
-  const [isIssuingToTeacher, setIsIssuingToTeacher] = useState(false);
+  // Per-teacher custom top-up state
+  const [customTargetId, setCustomTargetId] = useState<string | null>(null);
+  const [customCreditsInput, setCustomCreditsInput] = useState<number>(20);
+  const [isSubmittingCustom, setIsSubmittingCustom] = useState(false);
 
   const refreshData = async () => {
-    const [list, codes] = await Promise.all([
-      authService.fetchTeachersFromServer(),
-      authService.fetchPromoCodes(),
-    ]);
-    setTeachers(list);
-    setPromoCodes(codes);
+    setIsRefreshingList(true);
+    try {
+      const list = await authService.fetchTeachersFromServer();
+      setTeachers(list);
+      setIsFirebaseConnected(authService.isFirebaseAdminConnected());
+    } finally {
+      setIsRefreshingList(false);
+    }
   };
 
   useEffect(() => {
     if (!isOpen) return;
     if (initialTab) setActiveTab(initialTab);
+    setIsFirebaseConnected(authService.isFirebaseAdminConnected());
     refreshData();
 
-    const unsubscribe = storageService.subscribeRealtime((ev) => {
-      if (ev?.type === 'teachers_updated' || ev?.type === 'promo_codes_updated') {
+    const unsubscribeFs = authService.subscribeTeachersRealtime((latestList) => {
+      setTeachers(latestList);
+    });
+
+    const unsubscribeSse = storageService.subscribeRealtime((ev) => {
+      if (ev?.type === 'teachers_updated') {
         refreshData();
       }
     });
-    return unsubscribe;
+
+    return () => {
+      unsubscribeFs();
+      unsubscribeSse();
+    };
   }, [isOpen, initialTab]);
 
   // File input refs for uploading avatars
@@ -107,92 +125,63 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
     setTimeout(() => setNotice(null), 3500);
   };
 
+  const handleConnectGoogleAdmin = async () => {
+    setIsConnectingGoogle(true);
+    try {
+      const res = await authService.signInWithGoogle();
+      setIsFirebaseConnected(authService.isFirebaseAdminConnected());
+      if (res.success) {
+        await refreshData();
+        showNotice('Đã đồng bộ toàn bộ danh sách tài khoản từ Cloud Firestore!');
+      } else if (res.message) {
+        alert(res.message);
+      }
+    } finally {
+      setIsConnectingGoogle(false);
+    }
+  };
+
   const handleTopUp = async (teacherId: string, amount: number) => {
     const res = await authService.adminTopUpCredits(teacherId, amount);
     if (res.success) {
       await refreshData();
-      showNotice(
-        res.message ||
-          `Đã cấp mã ${res.code || ''} (+${amount} tín dụng AI) thành công!`
-      );
+      showNotice(res.message || `Đã cộng +${amount} tín dụng AI thành công!`);
     } else {
       alert(res.message || 'Không thể cộng tín dụng AI.');
     }
   };
 
-  const handleOpenIssueCode = (teacher: UserAccount) => {
-    if (issueTargetId === teacher.id) {
-      setIssueTargetId(null);
+  const handleOpenCustomTopUp = (teacher: UserAccount) => {
+    if (customTargetId === teacher.id) {
+      setCustomTargetId(null);
       return;
     }
-    setIssueTargetId(teacher.id);
-    setIssueCodeInput('');
-    setIssueCreditsInput(30);
+    setCustomTargetId(teacher.id);
+    setCustomCreditsInput(20);
   };
 
-  const handleConfirmIssueCode = async (e: React.FormEvent, teacherId: string) => {
+  const handleConfirmCustomTopUp = async (e: React.FormEvent, teacherId: string) => {
     e.preventDefault();
-    if (!Number.isFinite(issueCreditsInput) || issueCreditsInput <= 0) {
+    if (!Number.isFinite(customCreditsInput) || customCreditsInput <= 0) {
       alert('Vui lòng nhập số tín dụng AI hợp lệ (> 0).');
       return;
     }
-    setIsIssuingToTeacher(true);
+    setIsSubmittingCustom(true);
     try {
       const res = await authService.adminTopUpCredits(
         teacherId,
-        Math.floor(issueCreditsInput),
-        issueCodeInput.trim().toUpperCase() || undefined
+        Math.floor(customCreditsInput)
       );
       if (res.success) {
-        setIssueTargetId(null);
-        setIssueCodeInput('');
+        setCustomTargetId(null);
         await refreshData();
         showNotice(res.message);
       } else {
-        alert(res.message || 'Không thể cấp mã kích hoạt cho giáo viên.');
+        alert(res.message || 'Không thể cộng tín dụng cho giáo viên.');
       }
     } finally {
-      setIsIssuingToTeacher(false);
+      setIsSubmittingCustom(false);
     }
-  };
-
-  const handleCreatePromoCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!Number.isFinite(newCodeCredits) || newCodeCredits <= 0) {
-      alert('Vui lòng nhập số điểm tín dụng hợp lệ (> 0).');
-      return;
-    }
-
-    setIsCreatingCode(true);
-    try {
-      const res = await authService.adminCreatePromoCode({
-        code: newCodeInput.trim().toUpperCase() || undefined,
-        credit_value: Math.floor(newCodeCredits),
-      });
-      if (res.success) {
-        setNewCodeInput('');
-        await refreshData();
-        showNotice(res.message);
-      } else {
-        alert(res.message || 'Không thể tạo mã kích hoạt.');
-      }
-    } finally {
-      setIsCreatingCode(false);
-    }
-  };
-
-  const handleDeletePromoCode = async (code: string) => {
-    const ok = await authService.adminDeletePromoCode(code);
-    if (ok) {
-      await refreshData();
-      showNotice(`Đã xóa mã kích hoạt ${code}.`);
-    }
-  };
-
-  const handleCopyCode = (code: string) => {
-    navigator.clipboard?.writeText(code).catch(() => {});
-    setCopiedCode(code);
-    setTimeout(() => setCopiedCode(null), 2000);
   };
 
   const handleDeleteTeacher = async (teacherId: string) => {
@@ -240,8 +229,6 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
       t.email.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const unusedCodesCount = promoCodes.filter((c) => !c.is_used).length;
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/70 backdrop-blur-xs animate-in fade-in duration-150 overflow-y-auto"
@@ -270,6 +257,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={() => {
                 onLogout();
                 onClose();
@@ -280,6 +268,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
               <span>Đăng xuất</span>
             </button>
             <button
+              type="button"
               onClick={onClose}
               className="p-2 text-slate-300 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer"
             >
@@ -291,6 +280,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         {/* Tab switch */}
         <div className="flex border-b border-slate-200 bg-slate-50 px-6 pt-3 gap-2 overflow-x-auto">
           <button
+            type="button"
             onClick={() => setActiveTab('teachers')}
             className={`flex items-center gap-2 pb-3 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'teachers'
@@ -303,20 +293,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveTab('promo_codes')}
-            className={`flex items-center gap-2 pb-3 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-              activeTab === 'promo_codes'
-                ? 'border-sky-600 text-sky-700'
-                : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
-          >
-            <KeyRound className="w-4 h-4" />
-            <span>
-              Mã kích hoạt ({unusedCodesCount} khả dụng)
-            </span>
-          </button>
-
-          <button
+            type="button"
             onClick={() => setActiveTab('branding')}
             className={`flex items-center gap-2 pb-3 px-3 text-xs font-bold border-b-2 transition-all cursor-pointer whitespace-nowrap ${
               activeTab === 'branding'
@@ -332,21 +309,27 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
         {/* Snapshot Strip */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 bg-sky-50/60 border-b border-sky-100 text-xs">
           <div className="bg-white p-3 rounded-xl border border-sky-100 shadow-xs">
-            <span className="text-slate-500 block text-[11px]">Người dùng</span>
-            <span className="text-lg font-bold font-mono text-sky-700">{teachers.length}</span>
-          </div>
-          <div className="bg-white p-3 rounded-xl border border-sky-100 shadow-xs">
-            <span className="text-slate-500 block text-[11px]">Mã kích hoạt khả dụng</span>
-            <span className="text-lg font-bold font-mono text-amber-600">{unusedCodesCount}</span>
+            <span className="text-slate-500 block text-[11px]">Tài khoản đã đăng nhập</span>
+            <span className="text-lg font-bold font-mono tabular-nums text-sky-700">
+              {teachers.length}
+            </span>
           </div>
           <div className="bg-white p-3 rounded-xl border border-sky-100 shadow-xs">
             <span className="text-slate-500 block text-[11px]">Kho Ứng Dụng</span>
-            <span className="text-lg font-bold font-mono text-blue-700">{contentCounts.apps}</span>
+            <span className="text-lg font-bold font-mono tabular-nums text-blue-700">
+              {contentCounts.apps}
+            </span>
           </div>
           <div className="bg-white p-3 rounded-xl border border-sky-100 shadow-xs">
-            <span className="text-slate-500 block text-[11px]">Học liệu số & Thí nghiệm</span>
-            <span className="text-lg font-bold font-mono text-teal-700">
-              {contentCounts.games + contentCounts.simulations}
+            <span className="text-slate-500 block text-[11px]">Học Liệu Số</span>
+            <span className="text-lg font-bold font-mono tabular-nums text-indigo-700">
+              {contentCounts.games}
+            </span>
+          </div>
+          <div className="bg-white p-3 rounded-xl border border-sky-100 shadow-xs">
+            <span className="text-slate-500 block text-[11px]">Thí Nghiệm Mô Phỏng</span>
+            <span className="text-lg font-bold font-mono tabular-nums text-teal-700">
+              {contentCounts.simulations}
             </span>
           </div>
         </div>
@@ -361,26 +344,56 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
         {/* TAB 1: USERS & CREDITS MANAGEMENT */}
         {activeTab === 'teachers' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-5">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+            {!isFirebaseConnected && (
+              <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                  <span>
+                    Để tự động hiển thị toàn bộ tài khoản giáo viên đã đăng nhập trên Vercel theo thời gian thực và cấp tín dụng trực tuyến, hãy kết nối phiên Google Quản trị.
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleConnectGoogleAdmin}
+                  disabled={isConnectingGoogle}
+                  className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition-colors cursor-pointer shrink-0 disabled:opacity-60"
+                >
+                  {isConnectingGoogle ? 'Đang kết nối...' : 'Kết nối Google Quản trị'}
+                </button>
+              </div>
+            )}
+
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
               <div>
                 <h3 className="text-base font-bold text-slate-900 font-display">
-                  Danh sách tài khoản người dùng ({filteredTeachers.length})
+                  Danh sách tài khoản đã đăng nhập ({filteredTeachers.length})
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Mỗi tài khoản nhận 5 tín dụng AI miễn phí mỗi ngày (tự động làm mới sau 24 giờ). Quản trị viên có thể cấp mã kích hoạt hoặc cộng trực tiếp tín dụng AI.
+                  Mỗi giáo viên nhận 5 tín dụng AI miễn phí mỗi ngày (tự động làm mới sau 24 giờ). Khi giáo viên liên hệ, Quản trị viên cộng trực tiếp tín dụng tại đây.
                 </p>
               </div>
 
-              <div className="relative">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                <input
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  placeholder="Tìm người dùng, email..."
-                  className="pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500 w-full sm:w-60"
-                />
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 sm:flex-initial">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Tìm tên, email..."
+                    className="pl-9 pr-4 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-hidden focus:ring-2 focus:ring-sky-500 w-full sm:w-52"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={refreshData}
+                  disabled={isRefreshingList}
+                  className="p-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 cursor-pointer shrink-0"
+                  title="Tải lại danh sách tài khoản mới nhất"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshingList ? 'animate-spin' : ''}`} />
+                </button>
               </div>
             </div>
 
@@ -390,10 +403,10 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   <Users className="w-7 h-7" />
                 </div>
                 <h4 className="text-sm font-bold text-slate-700 mb-1">
-                  Chưa có tài khoản người dùng nào
+                  Chưa có tài khoản giáo viên nào
                 </h4>
                 <p className="text-xs text-slate-500 max-w-md">
-                  Khi người dùng đăng nhập hệ thống, hồ sơ và số dư tín dụng AI (5 tín dụng miễn phí mỗi ngày, tự làm mới sau 24 giờ) sẽ hiển thị tại đây.
+                  Khi giáo viên đăng nhập hệ thống (kể cả trên Vercel), hồ sơ và số dư tín dụng AI sẽ tự động lưu tại đây.
                 </p>
               </div>
             ) : (
@@ -403,24 +416,14 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                       <th className="py-3 px-4">Người dùng</th>
                       <th className="py-3 px-4">Tín dụng AI</th>
-                      <th className="py-3 px-4">Mã đã dùng gần nhất</th>
-                      <th className="py-3 px-4 text-right">Quản lý & Cộng tín dụng</th>
+                      <th className="py-3 px-4">Đăng nhập gần nhất</th>
+                      <th className="py-3 px-4 text-right">Cộng tín dụng & Quản lý</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {filteredTeachers.map((teacher) => {
                       const total = teacher.credits ?? 0;
-                      const latestPromoForTeacher = promoCodes
-                        .filter((p) => p.is_used && p.used_by === teacher.id)
-                        .sort(
-                          (a, b) =>
-                            (b.used_at || b.created_at || 0) -
-                            (a.used_at || a.created_at || 0)
-                        )[0];
-                      const displayedCode =
-                        teacher.lastRedeemedCode || latestPromoForTeacher?.code;
-                      const unusedCodes = promoCodes.filter((p) => !p.is_used);
-                      const isIssuingThisRow = issueTargetId === teacher.id;
+                      const isCustomRowOpen = customTargetId === teacher.id;
 
                       return (
                         <React.Fragment key={teacher.id}>
@@ -448,70 +451,54 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             <td className="py-3 px-4">
                               <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 font-bold">
                                 <Coins className="w-3.5 h-3.5 text-amber-600" />
-                                <span className="font-mono">{total}</span>
+                                <span className="font-mono tabular-nums">{total}</span>
                               </div>
                             </td>
-                            <td className="py-3 px-4">
-                              {displayedCode ? (
-                                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-sky-50 border border-sky-200 text-sky-800 font-mono font-bold text-[11px]">
-                                  <span>{displayedCode}</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleCopyCode(displayedCode)}
-                                    className="p-0.5 text-sky-500 hover:text-sky-700 rounded cursor-pointer"
-                                    title="Sao chép mã đã cấp"
-                                  >
-                                    {copiedCode === displayedCode ? (
-                                      <Check className="w-3 h-3 text-emerald-600" />
-                                    ) : (
-                                      <Copy className="w-3 h-3" />
-                                    )}
-                                  </button>
-                                </div>
-                              ) : (
-                                <span className="font-mono text-[11px] text-slate-400">—</span>
-                              )}
+                            <td className="py-3 px-4 text-[11px] text-slate-500 tabular-nums">
+                              {formatDateTime(teacher.updatedAt || teacher.createdAt)}
                             </td>
                             <td className="py-3 px-4 text-right">
                               <div className="flex items-center justify-end gap-1.5 flex-wrap">
                                 <button
                                   type="button"
-                                  onClick={() => handleOpenIssueCode(teacher)}
+                                  onClick={() => handleOpenCustomTopUp(teacher)}
                                   className={`px-2.5 py-1 text-xs font-bold border rounded-lg transition-colors cursor-pointer flex items-center gap-1 ${
-                                    isIssuingThisRow
+                                    isCustomRowOpen
                                       ? 'bg-indigo-600 text-white border-indigo-700'
                                       : 'text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border-indigo-200'
                                   }`}
-                                  title="Cấp mã kích hoạt riêng và lưu vào Mã đã dùng gần nhất"
+                                  title="Nhập số tín dụng tùy chỉnh để cộng cho giáo viên"
                                 >
-                                  <KeyRound className="w-3.5 h-3.5" />
-                                  <span>Cấp mã</span>
+                                  <PlusCircle className="w-3.5 h-3.5" />
+                                  <span>Cộng tùy chọn</span>
                                 </button>
                                 {[5, 10, 20, 50, 100].map((amt) => (
                                   <button
                                     key={amt}
                                     type="button"
                                     onClick={() => handleTopUp(teacher.id, amt)}
-                                    className={`px-2 py-1 text-xs font-bold border rounded-lg transition-colors cursor-pointer flex items-center gap-0.5 ${
+                                    className={`px-2 py-1 text-xs font-bold border rounded-lg transition-colors cursor-pointer tabular-nums ${
                                       amt >= 50
                                         ? 'text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border-emerald-200'
                                         : 'text-sky-700 bg-sky-50 hover:bg-sky-100 border-sky-200'
                                     }`}
-                                    title={`Cộng ${amt} tín dụng AI & tự động lưu mã kích hoạt`}
+                                    title={`Cộng +${amt} tín dụng AI`}
                                   >
-                                    <span>+{amt}</span>
+                                    +{amt}
                                   </button>
                                 ))}
 
                                 {deleteConfirmId === teacher.id ? (
                                   <div className="flex items-center gap-1">
                                     <button
+                                      type="button"
                                       onClick={() => handleDeleteTeacher(teacher.id)}
                                       className="px-2.5 py-1 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg cursor-pointer"
                                     >
                                       Xóa
                                     </button>
                                     <button
+                                      type="button"
                                       onClick={() => setDeleteConfirmId(null)}
                                       className="px-2 py-1 text-xs text-slate-600 bg-slate-100 rounded-lg cursor-pointer"
                                     >
@@ -520,6 +507,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                                   </div>
                                 ) : (
                                   <button
+                                    type="button"
                                     onClick={() => setDeleteConfirmId(teacher.id)}
                                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                                     title="Xóa tài khoản này"
@@ -531,80 +519,45 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                             </td>
                           </tr>
 
-                          {isIssuingThisRow && (
+                          {isCustomRowOpen && (
                             <tr className="bg-indigo-50/60">
                               <td colSpan={4} className="px-4 py-3 border-t border-indigo-100">
                                 <form
-                                  onSubmit={(e) => handleConfirmIssueCode(e, teacher.id)}
-                                  className="flex flex-col gap-2.5"
+                                  onSubmit={(e) => handleConfirmCustomTopUp(e, teacher.id)}
+                                  className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5"
                                 >
-                                  <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5">
-                                    <div className="flex-1">
-                                      <label className="block text-[11px] font-semibold text-indigo-900 mb-1">
-                                        Mã kích hoạt cấp cho {teacher.fullName} (tự tạo nếu để trống)
-                                      </label>
-                                      <input
-                                        type="text"
-                                        value={issueCodeInput}
-                                        onChange={(e) =>
-                                          setIssueCodeInput(e.target.value.toUpperCase())
-                                        }
-                                        placeholder="VD: HLS-GV2026"
-                                        className="w-full px-3 py-1.5 text-xs font-mono uppercase rounded-xl border border-indigo-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                                      />
-                                    </div>
-                                    <div className="w-full sm:w-36">
-                                      <label className="block text-[11px] font-semibold text-indigo-900 mb-1">
-                                        Số tín dụng cộng
-                                      </label>
-                                      <input
-                                        type="number"
-                                        min={1}
-                                        max={100000}
-                                        value={issueCreditsInput}
-                                        onChange={(e) =>
-                                          setIssueCreditsInput(Number(e.target.value))
-                                        }
-                                        className="w-full px-3 py-1.5 text-xs font-mono rounded-xl border border-indigo-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
-                                        required
-                                      />
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <button
-                                        type="submit"
-                                        disabled={isIssuingToTeacher}
-                                        className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
-                                      >
-                                        {isIssuingToTeacher ? 'Đang lưu...' : 'Xác nhận cấp mã'}
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setIssueTargetId(null)}
-                                        className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer"
-                                      >
-                                        Đóng
-                                      </button>
-                                    </div>
+                                  <div className="flex-1">
+                                    <label className="block text-[11px] font-semibold text-indigo-900 mb-1">
+                                      Số tín dụng AI cộng thêm cho {teacher.fullName}
+                                    </label>
+                                    <input
+                                      type="number"
+                                      min={1}
+                                      max={100000}
+                                      value={customCreditsInput}
+                                      onChange={(e) =>
+                                        setCustomCreditsInput(Number(e.target.value))
+                                      }
+                                      className="w-full px-3 py-1.5 text-xs font-mono rounded-xl border border-indigo-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-indigo-500"
+                                      required
+                                    />
                                   </div>
-
-                                  {unusedCodes.length > 0 && (
-                                    <div className="flex items-center gap-1.5 flex-wrap text-[11px] text-indigo-800">
-                                      <span className="font-semibold">Chọn nhanh mã khả dụng:</span>
-                                      {unusedCodes.slice(0, 6).map((uc) => (
-                                        <button
-                                          key={uc.code}
-                                          type="button"
-                                          onClick={() => {
-                                            setIssueCodeInput(uc.code);
-                                            setIssueCreditsInput(uc.credit_value);
-                                          }}
-                                          className="px-2 py-0.5 rounded-md bg-white border border-indigo-200 hover:bg-indigo-100 font-mono font-bold text-indigo-700 cursor-pointer"
-                                        >
-                                          {uc.code} (+{uc.credit_value})
-                                        </button>
-                                      ))}
-                                    </div>
-                                  )}
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="submit"
+                                      disabled={isSubmittingCustom}
+                                      className="px-4 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded-xl transition-colors cursor-pointer whitespace-nowrap"
+                                    >
+                                      {isSubmittingCustom ? 'Đang lưu...' : 'Xác nhận cộng'}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setCustomTargetId(null)}
+                                      className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl cursor-pointer"
+                                    >
+                                      Đóng
+                                    </button>
+                                  </div>
                                 </form>
                               </td>
                             </tr>
@@ -619,157 +572,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
           </div>
         )}
 
-        {/* TAB 2: PROMO CODES MANAGEMENT (promo_codes) */}
-        {activeTab === 'promo_codes' && (
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* Create promo code form */}
-            <form
-              onSubmit={handleCreatePromoCode}
-              className="p-4 rounded-2xl bg-sky-50/70 border border-sky-200 space-y-3"
-            >
-              <div className="flex items-center gap-2">
-                <KeyRound className="w-4 h-4 text-sky-600" />
-                <h3 className="text-sm font-bold text-slate-900 font-display">
-                  Tạo mã kích hoạt mới (promo_codes)
-                </h3>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    Mã kích hoạt (tự động nếu để trống)
-                  </label>
-                  <input
-                    type="text"
-                    value={newCodeInput}
-                    onChange={(e) => setNewCodeInput(e.target.value.toUpperCase())}
-                    placeholder="VD: HLS-VIP50"
-                    className="w-full px-3 py-2 text-xs font-mono uppercase rounded-xl border border-slate-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-semibold text-slate-600 mb-1">
-                    Số tín dụng cộng (credit_value)
-                  </label>
-                  <input
-                    type="number"
-                    min={1}
-                    max={100000}
-                    value={newCodeCredits}
-                    onChange={(e) => setNewCodeCredits(Number(e.target.value))}
-                    className="w-full px-3 py-2 text-xs font-mono rounded-xl border border-slate-200 bg-white focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                    required
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    type="submit"
-                    disabled={isCreatingCode}
-                    className="w-full py-2 px-4 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 disabled:opacity-50 rounded-xl transition-colors flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>{isCreatingCode ? 'Đang tạo...' : 'Tạo mã kích hoạt'}</span>
-                  </button>
-                </div>
-              </div>
-            </form>
-
-            {/* Promo codes list */}
-            {promoCodes.length === 0 ? (
-              <div className="rounded-2xl border-2 border-dashed border-slate-200 p-10 text-center bg-slate-50/50">
-                <p className="text-xs text-slate-500">
-                  Chưa có mã kích hoạt nào. Hãy tạo mã ở khung phía trên để gửi cho người dùng khi hết tín dụng AI.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto rounded-2xl border border-slate-200 shadow-xs">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="bg-slate-100 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
-                      <th className="py-3 px-4">Mã kích hoạt</th>
-                      <th className="py-3 px-4">Giá trị (credit_value)</th>
-                      <th className="py-3 px-4">Trạng thái (is_used)</th>
-                      <th className="py-3 px-4">Người dùng sử dụng (used_by)</th>
-                      <th className="py-3 px-4 text-right">Thao tác</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {promoCodes.map((item) => (
-                      <tr key={item.code} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-                              {item.code}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => handleCopyCode(item.code)}
-                              className="p-1 text-slate-400 hover:text-sky-600 rounded-md hover:bg-sky-50 cursor-pointer"
-                              title="Sao chép mã"
-                            >
-                              {copiedCode === item.code ? (
-                                <Check className="w-3.5 h-3.5 text-emerald-600" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
-                            </button>
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-mono font-bold text-amber-700">
-                            +{item.credit_value} tín dụng
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          {item.is_used ? (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 font-semibold text-[11px]">
-                              Đã sử dụng
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-[11px]">
-                              Chưa sử dụng
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-[11px] text-slate-600">
-                          {item.used_by ? (
-                            (() => {
-                              const matched = teachers.find((t) => t.id === item.used_by);
-                              return matched ? (
-                                <div>
-                                  <div className="font-semibold text-slate-800">{matched.fullName}</div>
-                                  <div className="text-slate-500 font-mono">{matched.email}</div>
-                                </div>
-                              ) : (
-                                <span className="font-mono">{item.used_by}</span>
-                              );
-                            })()
-                          ) : (
-                            '—'
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePromoCode(item.code)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                            title="Xóa mã kích hoạt"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* TAB 3: BRANDING & AVATAR UPLOADS */}
+        {/* TAB 2: BRANDING & AVATAR UPLOADS */}
         {activeTab === 'branding' && (
           <div className="flex-1 overflow-y-auto p-6 space-y-6">
             <div>
@@ -813,6 +616,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     className="hidden"
                   />
                   <button
+                    type="button"
                     onClick={() => homeFileInputRef.current?.click()}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
@@ -821,6 +625,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </button>
                   {branding.homeAvatar && (
                     <button
+                      type="button"
                       onClick={() => handleRemoveImage('homeAvatar')}
                       className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
                       title="Khôi phục mặc định"
@@ -874,6 +679,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     className="hidden"
                   />
                   <button
+                    type="button"
                     onClick={() => appsFileInputRef.current?.click()}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
@@ -882,6 +688,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </button>
                   {branding.appsAvatar && (
                     <button
+                      type="button"
                       onClick={() => handleRemoveImage('appsAvatar')}
                       className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
                       title="Khôi phục mặc định"
@@ -935,6 +742,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     className="hidden"
                   />
                   <button
+                    type="button"
                     onClick={() => gamesFileInputRef.current?.click()}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
@@ -943,6 +751,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </button>
                   {branding.gamesAvatar && (
                     <button
+                      type="button"
                       onClick={() => handleRemoveImage('gamesAvatar')}
                       className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
                       title="Khôi phục mặc định"
@@ -996,6 +805,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                     className="hidden"
                   />
                   <button
+                    type="button"
                     onClick={() => simsFileInputRef.current?.click()}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 px-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition-colors cursor-pointer"
                   >
@@ -1004,6 +814,7 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
                   </button>
                   {branding.simsAvatar && (
                     <button
+                      type="button"
                       onClick={() => handleRemoveImage('simsAvatar')}
                       className="p-2 text-rose-600 bg-rose-50 hover:bg-rose-100 rounded-xl border border-rose-200 transition-colors cursor-pointer"
                       title="Khôi phục mặc định"
@@ -1019,8 +830,9 @@ export const AdminPanelModal: React.FC<AdminPanelModalProps> = ({
 
         {/* Footer info */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 text-xs text-slate-500 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <span>Quản trị viên quản lý tài khoản người dùng, mã kích hoạt và hình đại diện khu vực.</span>
+          <span>Quản trị viên quản lý toàn bộ tài khoản đã đăng nhập, tín dụng AI và hình đại diện khu vực.</span>
           <button
+            type="button"
             onClick={onClose}
             className="px-4 py-2 font-bold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
           >

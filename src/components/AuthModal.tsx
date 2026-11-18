@@ -3,8 +3,6 @@ import {
   X,
   Lock,
   Mail,
-  User,
-  CheckCircle2,
   AlertCircle,
   Eye,
   EyeOff,
@@ -23,23 +21,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSuccess,
   onClose,
 }) => {
-  const [isRegisterMode, setIsRegisterMode] = useState(false);
-  const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isFormLoading, setIsFormLoading] = useState(false);
-
   const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
 
   React.useEffect(() => {
     if (isOpen) {
       setErrorMsg('');
-      setSuccessMsg('');
-      setIsRegisterMode(false);
-      setFullName('');
       setEmail('');
       setPassword('');
       setShowPassword(false);
@@ -50,7 +41,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleGoogleLogin = async () => {
     setErrorMsg('');
-    setSuccessMsg('');
     setIsGoogleLoading(true);
     try {
       const res = await authService.signInWithGoogle();
@@ -70,14 +60,10 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const handleEmailPasswordSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg('');
-    setSuccessMsg('');
     setIsFormLoading(true);
 
     try {
-      const res = isRegisterMode
-        ? await authService.registerWithEmailPassword(fullName, email, password)
-        : await authService.signInWithEmailPassword(email, password);
-
+      const res = await authService.signInWithEmailPassword(email, password);
       if (res.success && res.user) {
         onSuccess(res.user);
         onClose();
@@ -125,13 +111,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
         )}
 
-        {successMsg && (
-          <div className="mx-6 mt-4 p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-start gap-2">
-            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
-            <span>{successMsg}</span>
-          </div>
-        )}
-
         {/* Unified Sign-In Options: Google Account Picker + Email & Password */}
         <div className="p-6 space-y-5">
           {/* Option 1: Google Account Selection */}
@@ -173,27 +152,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
             <div className="flex-grow border-t border-slate-200" />
           </div>
 
-          {/* Option 2: Email & Password Form (no pre-filled admin email hints) */}
+          {/* Option 2: Email & Password Sign-In only */}
           <form onSubmit={handleEmailPasswordSubmit} className="space-y-3.5">
-            {isRegisterMode && (
-              <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Họ và tên
-                </label>
-                <div className="relative">
-                  <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-2.5" />
-                  <input
-                    type="text"
-                    value={fullName}
-                    onChange={(e) => setFullName(e.target.value)}
-                    placeholder="Nhập họ và tên"
-                    className="w-full pl-10 pr-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
-                    required
-                  />
-                </div>
-              </div>
-            )}
-
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1">
                 Email
@@ -223,7 +183,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   placeholder="Nhập mật khẩu"
-                  autoComplete={isRegisterMode ? 'new-password' : 'current-password'}
+                  autoComplete="current-password"
                   className="w-full pl-10 pr-10 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-sky-500"
                   required
                 />
@@ -244,28 +204,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
               disabled={isFormLoading || isGoogleLoading}
               className="w-full py-2.5 px-4 text-xs font-bold text-white bg-sky-600 hover:bg-sky-700 active:scale-[0.99] rounded-xl shadow-sm transition-all cursor-pointer disabled:opacity-60"
             >
-              {isFormLoading
-                ? 'Đang xác thực...'
-                : isRegisterMode
-                ? 'Đăng ký & Đăng nhập'
-                : 'Đăng nhập'}
+              {isFormLoading ? 'Đang xác thực...' : 'Đăng nhập'}
             </button>
-
-            <div className="text-center pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRegisterMode(!isRegisterMode);
-                  setErrorMsg('');
-                  setSuccessMsg('');
-                }}
-                className="text-xs font-semibold text-sky-700 hover:text-sky-900 hover:underline cursor-pointer"
-              >
-                {isRegisterMode
-                  ? 'Đã có tài khoản? Quay lại đăng nhập'
-                  : 'Chưa có tài khoản? Đăng ký bằng Email'}
-              </button>
-            </div>
           </form>
         </div>
       </div>

@@ -17,13 +17,13 @@ import {
   LogOut,
   Settings,
   Coins,
-  KeyRound,
+  Phone,
 } from 'lucide-react';
 import {
   UserRole,
   UserAccount,
   SiteBranding,
-  APP_LAUNCH_CREDIT_COST,
+  MIN_CREDIT_COST,
 } from '../types';
 import { authService } from '../services/auth';
 
@@ -33,7 +33,7 @@ interface LeftSidebarProps {
   branding?: SiteBranding;
   onOpenAuth: () => void;
   onOpenAdminPanel: () => void;
-  onOpenRedeemCode: () => void;
+  onOpenContactAdmin: () => void;
   onLogout: () => void;
   activeSection: string;
   onNavigate: (sectionId: string) => void;
@@ -57,7 +57,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
   branding,
   onOpenAuth,
   onOpenAdminPanel,
-  onOpenRedeemCode,
+  onOpenContactAdmin,
   onLogout,
   activeSection,
   onNavigate,
@@ -108,7 +108,7 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
 
   const canManage = role === 'admin';
   const totalCredits = authService.getTotalCredits(currentUser);
-  const isLowCredits = role === 'teacher' && totalCredits < APP_LAUNCH_CREDIT_COST;
+  const isLowCredits = role === 'teacher' && totalCredits < MIN_CREDIT_COST;
 
   return (
     <>
@@ -301,17 +301,22 @@ export const LeftSidebar: React.FC<LeftSidebarProps> = ({
                     </span>
                   </div>
                   <p className="text-[10px] text-slate-600">
-                    5 tín dụng miễn phí/ngày • Làm mới sau 24h
+                    5 tín dụng miễn phí/ngày · Làm mới sau 24h
                   </p>
                   <button
+                    type="button"
                     onClick={() => {
-                      onOpenRedeemCode();
+                      onOpenContactAdmin();
                       onCloseMobile();
                     }}
-                    className="w-full mt-1 py-1.5 text-[11px] font-bold text-white bg-amber-500 hover:bg-amber-600 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer"
+                    className={`w-full mt-1 py-1.5 text-[11px] font-bold text-white rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer ${
+                      isLowCredits
+                        ? 'bg-rose-600 hover:bg-rose-700'
+                        : 'bg-sky-600 hover:bg-sky-700'
+                    }`}
                   >
-                    <KeyRound className="w-3 h-3" />
-                    <span>Nhập mã kích hoạt</span>
+                    <Phone className="w-3 h-3" />
+                    <span>Liên hệ Quản trị viên</span>
                   </button>
                 </div>
 

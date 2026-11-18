@@ -61,7 +61,7 @@ export const ZoneInteractiveGames: React.FC<ZoneInteractiveGamesProps> = ({
   };
 
   return (
-    <section id="tro-choi-tuong-tac" className="scroll-mt-28 md:scroll-mt-24 space-y-4">
+    <section id="tro-choi-tuong-tac" className="scroll-mt-36 space-y-4">
       {/* Hidden file input for Admin */}
       {isAdmin && (
         <input

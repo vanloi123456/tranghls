@@ -1,16 +1,18 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   Coins,
-  KeyRound,
-  CheckCircle2,
-  AlertTriangle,
   ShieldCheck,
-  Play,
   Phone,
+  Mail,
+  Copy,
+  Check,
+  RefreshCw,
+  Play,
+  Clock,
 } from 'lucide-react';
 import { UserAccount, MIN_CREDIT_COST, DAILY_FREE_CREDITS } from '../types';
-import { authService, ADMIN_PHONE } from '../services/auth';
+import { authService, ADMIN_PHONE, ADMIN_CREDENTIALS } from '../services/auth';
 
 interface RedeemCodeModalProps {
   isOpen: boolean;
@@ -33,89 +35,54 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({
   onContinueAfterRedeem,
   onClose,
 }) => {
-  const [promoInput, setPromoInput] = useState('');
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState<string | null>(null);
-  const [submitError, setSubmitError] = useState<string | null>(null);
-  const [redeemedUser, setRedeemedUser] = useState<UserAccount | null>(null);
-  const autoLaunchTimerRef = useRef<number | null>(null);
+  const [copiedField, setCopiedField] = useState<'phone' | 'email' | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [refreshStatus, setRefreshStatus] = useState<string | null>(null);
+  const [latestUser, setLatestUser] = useState<UserAccount | null>(null);
 
   useEffect(() => {
-    if (!isOpen) {
-      if (autoLaunchTimerRef.current) {
-        window.clearTimeout(autoLaunchTimerRef.current);
-        autoLaunchTimerRef.current = null;
-      }
-      return;
-    }
-    setPromoInput('');
-    setSubmitSuccess(null);
-    setSubmitError(null);
-    setRedeemedUser(null);
+    if (!isOpen) return;
+    setCopiedField(null);
+    setRefreshStatus(null);
+    setLatestUser(null);
   }, [isOpen]);
-
-  useEffect(() => {
-    return () => {
-      if (autoLaunchTimerRef.current) {
-        window.clearTimeout(autoLaunchTimerRef.current);
-      }
-    };
-  }, []);
 
   if (!isOpen || !user) return null;
 
-  const activeUser = redeemedUser || user;
+  const activeUser = latestUser || user;
   const totalCredits = authService.getTotalCredits(activeUser);
   const isInsufficient = totalCredits < requiredCredits;
   const remainingResetText = authService.formatTimeUntilFreeReset(activeUser);
 
-  const handleRedeem = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleaned = promoInput.trim().toUpperCase();
-    if (!cleaned) {
-      setSubmitError('Vui lòng nhập mã kích hoạt do Quản trị viên cung cấp.');
-      return;
-    }
+  const handleCopy = (field: 'phone' | 'email', text: string) => {
+    navigator.clipboard?.writeText(text).catch(() => {});
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
 
-    setIsSubmitting(true);
-    setSubmitError(null);
-    setSubmitSuccess(null);
-
+  const handleRefreshBalance = async () => {
+    setIsRefreshing(true);
+    setRefreshStatus(null);
     try {
-      const res = await authService.redeemPromoCode(activeUser, cleaned);
-      if (res.success && res.user) {
-        const updated = res.user;
-        setRedeemedUser(updated);
-        onUserUpdated(updated);
-        setSubmitSuccess(res.message);
-        setPromoInput('');
-
-        if (
-          updated.credits >= requiredCredits &&
-          pendingItemTitle &&
-          onContinueAfterRedeem
-        ) {
-          autoLaunchTimerRef.current = window.setTimeout(() => {
-            onContinueAfterRedeem(updated);
-          }, 900);
-        }
+      const updated = await authService.refreshCurrentUser(activeUser);
+      setLatestUser(updated);
+      onUserUpdated(updated);
+      const nextTotal = authService.getTotalCredits(updated);
+      if (nextTotal >= requiredCredits) {
+        setRefreshStatus(`Đã cập nhật số dư: ${nextTotal} tín dụng AI. Thầy/cô có thể tiếp tục sử dụng ngay.`);
       } else {
-        setSubmitError(res.message || 'Mã kích hoạt không hợp lệ hoặc đã được sử dụng.');
+        setRefreshStatus(`Số dư hiện tại là ${nextTotal} tín dụng AI. Vui lòng liên hệ Quản trị viên để được cấp thêm.`);
       }
-    } catch (err: any) {
-      setSubmitError(err?.message || 'Đã xảy ra lỗi khi xác nhận mã kích hoạt.');
+    } catch {
+      setRefreshStatus('Không thể làm mới số dư lúc này. Vui lòng thử lại.');
     } finally {
-      setIsSubmitting(false);
+      setIsRefreshing(false);
     }
   };
 
-  const handleUseNow = () => {
-    if (autoLaunchTimerRef.current) {
-      window.clearTimeout(autoLaunchTimerRef.current);
-      autoLaunchTimerRef.current = null;
-    }
-    if (redeemedUser && onContinueAfterRedeem) {
-      onContinueAfterRedeem(redeemedUser);
+  const handleContinueNow = () => {
+    if (onContinueAfterRedeem) {
+      onContinueAfterRedeem(activeUser);
     } else {
       onClose();
     }
@@ -127,34 +94,46 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-amber-200 overflow-hidden my-6"
+        className="w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-sky-200 overflow-hidden my-6"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-label="Liên hệ Quản trị viên"
       >
         {/* Header */}
-        <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-white p-5 border-b border-amber-100 flex items-start justify-between gap-4">
+        <div
+          className={`p-5 border-b flex items-start justify-between gap-4 ${
+            isInsufficient
+              ? 'bg-gradient-to-r from-rose-50 via-amber-50 to-white border-rose-100'
+              : 'bg-gradient-to-r from-sky-50 via-cyan-50 to-white border-sky-100'
+          }`}
+        >
           <div className="flex items-start gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 text-white flex items-center justify-center shadow-sm shrink-0">
-              <KeyRound className="w-6 h-6" />
+            <div
+              className={`w-11 h-11 rounded-2xl text-white flex items-center justify-center shadow-sm shrink-0 ${
+                isInsufficient
+                  ? 'bg-gradient-to-br from-rose-500 to-orange-500'
+                  : 'bg-gradient-to-br from-sky-500 to-blue-600'
+              }`}
+            >
+              <ShieldCheck className="w-6 h-6" />
             </div>
             <div>
               <h2 className="text-lg font-bold text-slate-900 font-display">
-                {submitSuccess && !isInsufficient
-                  ? 'Kích hoạt thành công!'
-                  : isInsufficient
-                  ? 'Không đủ tín dụng AI'
-                  : 'Nhập mã kích hoạt (Redeem Code)'}
+                {isInsufficient
+                  ? 'Hết tín dụng AI – Liên hệ Quản trị viên'
+                  : 'Liên hệ Quản trị viên'}
               </h2>
-              <p className="text-xs text-amber-900 mt-0.5 leading-relaxed">
+              <p className="text-xs text-slate-700 mt-0.5 leading-relaxed">
                 {reasonMessage ||
                   (isInsufficient
-                    ? `Thao tác này cần ${requiredCredits} tín dụng AI. Vui lòng liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để được cấp mã kích hoạt.`
-                    : 'Nhập mã kích hoạt do Quản trị viên cấp để cộng thêm tín dụng AI vào tài khoản.')}
+                    ? `Số dư tín dụng AI của thầy/cô đã hết hoặc không đủ (cần ${requiredCredits} tín dụng AI). Vui lòng liên hệ Quản trị viên để được cấp thêm tín dụng và tiếp tục sử dụng.`
+                    : 'Liên hệ Quản trị viên khi cần hỗ trợ kỹ thuật hoặc cấp thêm tín dụng AI để tiếp tục sử dụng hệ thống.')}
               </p>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
             className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
             title="Đóng"
@@ -163,7 +142,7 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({
           </button>
         </div>
 
-        <form onSubmit={handleRedeem} className="p-6 space-y-5">
+        <div className="p-6 space-y-5">
           {/* Current Balance Banner */}
           <div
             className={`p-4 rounded-2xl border flex items-center justify-between gap-3 ${
@@ -177,7 +156,7 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({
                 Số dư tín dụng AI hiện tại
               </span>
               <span
-                className={`text-2xl font-bold font-mono ${
+                className={`text-2xl font-bold font-mono tabular-nums ${
                   isInsufficient ? 'text-rose-600' : 'text-emerald-700'
                 }`}
               >
@@ -189,102 +168,157 @@ export const RedeemCodeModal: React.FC<RedeemCodeModalProps> = ({
             </div>
           </div>
 
-          {/* Admin contact & daily 24h refresh prompt */}
-          <div className="p-3.5 rounded-2xl bg-sky-50 border border-sky-200 text-xs text-sky-900 flex items-start gap-2.5">
-            <ShieldCheck className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
-            <div className="space-y-1 leading-relaxed">
-              <p className="font-semibold">
-                Yêu cầu Quản trị viên cấp mã kích hoạt để sử dụng ngay
-              </p>
-              <p className="text-sky-700 flex items-center gap-1.5 flex-wrap">
-                <span>Liên lạc Quản trị viên qua số điện thoại:</span>
-                <a
-                  href={`tel:${ADMIN_PHONE}`}
-                  className="inline-flex items-center gap-1 font-mono font-bold text-sky-900 hover:text-sky-600 underline underline-offset-2"
+          {/* Admin Contact Card */}
+          <div className="p-4 rounded-2xl bg-sky-50/80 border border-sky-200 space-y-3">
+            <div className="flex items-start gap-2.5">
+              <ShieldCheck className="w-5 h-5 text-sky-600 shrink-0 mt-0.5" />
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">
+                  Thông tin liên hệ Quản trị viên
+                </h3>
+                <p className="text-xs text-slate-600 mt-0.5">
+                  Đào Văn Lợi – PHT Trường TH&THCS Tân Khánh Trung, tỉnh Đồng Tháp
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2 pt-1">
+              {/* Phone / Zalo */}
+              <div className="flex items-center justify-between gap-2 bg-white px-3.5 py-2.5 rounded-xl border border-sky-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Phone className="w-4 h-4 text-sky-600 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-slate-500 block">Điện thoại / Zalo</span>
+                    <a
+                      href={`tel:${ADMIN_PHONE}`}
+                      className="text-sm font-bold font-mono text-sky-800 hover:text-sky-600 underline underline-offset-2"
+                    >
+                      {ADMIN_PHONE}
+                    </a>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleCopy('phone', ADMIN_PHONE)}
+                    className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    {copiedField === 'phone' ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Đã chép</span>
+                      </>
+                    ) : (
+                      <>
+                        <Copy className="w-3.5 h-3.5" />
+                        <span>Sao chép</span>
+                      </>
+                    )}
+                  </button>
+                  <a
+                    href={`tel:${ADMIN_PHONE}`}
+                    className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold transition-colors"
+                  >
+                    <Phone className="w-3.5 h-3.5" />
+                    <span>Gọi ngay</span>
+                  </a>
+                </div>
+              </div>
+
+              {/* Email */}
+              <div className="flex items-center justify-between gap-2 bg-white px-3.5 py-2.5 rounded-xl border border-sky-100">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Mail className="w-4 h-4 text-sky-600 shrink-0" />
+                  <div className="min-w-0">
+                    <span className="text-[11px] text-slate-500 block">Email quản trị</span>
+                    <a
+                      href={`mailto:${ADMIN_CREDENTIALS.email}`}
+                      className="text-xs font-semibold font-mono text-sky-800 hover:text-sky-600 truncate block"
+                    >
+                      {ADMIN_CREDENTIALS.email}
+                    </a>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleCopy('email', ADMIN_CREDENTIALS.email)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold transition-colors cursor-pointer shrink-0"
                 >
-                  <Phone className="w-3 h-3" />
-                  <span>{ADMIN_PHONE}</span>
-                </a>
-              </p>
-              <p className="text-[11px] text-sky-800/90">
-                Hoặc chờ hệ thống tự động làm mới <strong>{DAILY_FREE_CREDITS} tín dụng AI miễn phí</strong> sau mỗi 24 giờ
-                {remainingResetText ? ` (còn khoảng ${remainingResetText})` : ''}.
-              </p>
+                  {copiedField === 'email' ? (
+                    <>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Đã chép</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5" />
+                      <span>Sao chép</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
 
-          {/* Redeem Code Input */}
-          <div className="space-y-2">
-            <label
-              htmlFor="redeem-code-input"
-              className="block text-xs font-bold text-slate-700 uppercase tracking-wider"
+          {/* 24h auto-refresh note */}
+          <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-700 flex items-start gap-2.5">
+            <Clock className="w-4 h-4 text-sky-600 shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              Hệ thống sẽ tự động làm mới <strong>{DAILY_FREE_CREDITS} tín dụng AI miễn phí</strong> mỗi ngày sau 24 giờ
+              {remainingResetText ? ` (dự kiến còn khoảng ${remainingResetText})` : ''}. Sau khi Quản trị viên cộng thêm tín dụng cho tài khoản, thầy/cô bấm nút kiểm tra số dư bên dưới để tiếp tục ngay.
+            </p>
+          </div>
+
+          {refreshStatus && (
+            <div
+              className={`p-3 rounded-xl border text-xs ${
+                !isInsufficient
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-amber-50 border-amber-200 text-amber-900'
+              }`}
             >
-              Mã kích hoạt (Redeem Code)
-            </label>
-            <div className="flex flex-col sm:flex-row gap-2.5">
-              <input
-                id="redeem-code-input"
-                type="text"
-                value={promoInput}
-                onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
-                placeholder="Nhập mã kích hoạt (VD: HLS-A1B2C3)"
-                autoComplete="off"
-                className="flex-1 px-4 py-3 rounded-xl border-2 border-slate-200 focus:border-sky-500 focus:outline-hidden font-mono text-sm font-bold tracking-wider uppercase text-slate-900 bg-slate-50 focus:bg-white transition-colors"
-              />
-              <button
-                type="submit"
-                disabled={isSubmitting || !promoInput.trim()}
-                className="px-6 py-3 text-xs font-bold text-white bg-gradient-to-r from-sky-600 to-blue-600 hover:from-sky-700 hover:to-blue-700 disabled:opacity-50 rounded-xl shadow-md shadow-sky-600/20 transition-all cursor-pointer shrink-0"
-              >
-                {isSubmitting ? 'Đang kiểm tra...' : 'Xác nhận'}
-              </button>
-            </div>
-          </div>
-
-          {/* Feedback messages */}
-          {submitError && (
-            <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-              <span>{submitError}</span>
+              {refreshStatus}
             </div>
           )}
 
-          {submitSuccess && (
-            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs space-y-2.5">
-              <div className="flex items-center gap-2 font-bold">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>{submitSuccess}</span>
-              </div>
-              <p className="text-emerald-800 leading-relaxed">
-                {pendingItemTitle
-                  ? `Đang mở "${pendingItemTitle}"... Thầy/cô đã có thể sử dụng Kho Ứng Dụng, Học Liệu Số và Thí Nghiệm Mô Phỏng.`
-                  : 'Thầy/cô đã có thể sử dụng ngay Kho Ứng Dụng, Học Liệu Số và Thí Nghiệm Mô Phỏng.'}
-              </p>
-              {!isInsufficient && (
+          {/* Actions */}
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+            <span className="text-[11px] text-slate-500 truncate max-w-[200px]">
+              Tài khoản: {activeUser.email}
+            </span>
+
+            <div className="flex items-center gap-2 ml-auto">
+              <button
+                type="button"
+                onClick={handleRefreshBalance}
+                disabled={isRefreshing}
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-xl transition-colors cursor-pointer disabled:opacity-60"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span>{isRefreshing ? 'Đang kiểm tra...' : 'Kiểm tra lại số dư'}</span>
+              </button>
+
+              {!isInsufficient && pendingItemTitle && onContinueAfterRedeem && (
                 <button
                   type="button"
-                  onClick={handleUseNow}
+                  onClick={handleContinueNow}
                   className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-xs transition-colors cursor-pointer"
                 >
                   <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>{pendingItemTitle ? `Mở ngay: ${pendingItemTitle}` : 'Bắt đầu sử dụng ngay'}</span>
+                  <span>Tiếp tục sử dụng</span>
                 </button>
               )}
-            </div>
-          )}
 
-          {/* Footer */}
-          <div className="flex items-center justify-between gap-3 pt-2 border-t border-slate-100 text-[11px] text-slate-500">
-            <span className="truncate">Tài khoản: {activeUser.email}</span>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer shrink-0"
-            >
-              Đóng
-            </button>
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Đóng
+              </button>
+            </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );

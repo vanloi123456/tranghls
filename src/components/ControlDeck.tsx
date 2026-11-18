@@ -10,9 +10,9 @@ import {
   LogIn,
   Image as ImageIcon,
   Coins,
-  KeyRound,
+  Phone,
 } from 'lucide-react';
-import { UserRole, ContentItem, UserAccount, APP_LAUNCH_CREDIT_COST } from '../types';
+import { UserRole, ContentItem, UserAccount, MIN_CREDIT_COST } from '../types';
 import { authService } from '../services/auth';
 
 interface ControlDeckProps {
@@ -20,8 +20,8 @@ interface ControlDeckProps {
   currentUser: UserAccount | null;
   onOpenAuth: () => void;
   onOpenAdminPanel: () => void;
-  onOpenAdminPanelTab?: (tab: 'teachers' | 'promo_codes' | 'branding') => void;
-  onOpenRedeemCode: () => void;
+  onOpenAdminPanelTab?: (tab: 'teachers' | 'branding') => void;
+  onOpenContactAdmin: () => void;
   onLogout: () => void;
   selectedItem: ContentItem | null;
   onEditSelected: () => void;
@@ -37,7 +37,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
   onOpenAuth,
   onOpenAdminPanel,
   onOpenAdminPanelTab,
-  onOpenRedeemCode,
+  onOpenContactAdmin,
   onLogout,
   selectedItem,
   onEditSelected,
@@ -48,7 +48,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
 }) => {
   const canManage = role === 'admin';
   const totalCredits = authService.getTotalCredits(currentUser);
-  const isLowCredits = role === 'teacher' && totalCredits < APP_LAUNCH_CREDIT_COST;
+  const isLowCredits = role === 'teacher' && totalCredits < MIN_CREDIT_COST;
 
   return (
     <div className="w-full">
@@ -60,26 +60,18 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
               <ShieldCheck className="w-4 h-4 text-sky-400" />
               <span className="text-xs font-bold">Quản trị viên</span>
               <button
+                type="button"
                 onClick={onOpenAdminPanel}
-                className="ml-1 px-2 py-0.5 bg-sky-500 hover:bg-sky-400 text-slate-950 text-[11px] font-bold rounded-md transition-colors cursor-pointer"
+                className="ml-1 px-2.5 py-0.5 bg-sky-500 hover:bg-sky-400 text-slate-950 text-[11px] font-bold rounded-md transition-colors cursor-pointer"
               >
                 Quản lý Tài khoản
               </button>
               <button
-                onClick={() =>
-                  onOpenAdminPanelTab ? onOpenAdminPanelTab('promo_codes') : onOpenAdminPanel()
-                }
-                className="px-2 py-0.5 bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-bold rounded-md transition-colors cursor-pointer flex items-center gap-1"
-                title="Tạo và quản lý mã kích hoạt tín dụng AI"
-              >
-                <KeyRound className="w-3 h-3" />
-                <span>Mã kích hoạt</span>
-              </button>
-              <button
+                type="button"
                 onClick={() =>
                   onOpenAdminPanelTab ? onOpenAdminPanelTab('branding') : onOpenAdminPanel()
                 }
-                className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-sky-200 text-[11px] font-semibold rounded-md border border-slate-700 transition-colors cursor-pointer flex items-center gap-1"
+                className="px-2.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-sky-200 text-[11px] font-semibold rounded-md border border-slate-700 transition-colors cursor-pointer flex items-center gap-1"
                 title="Thay đổi hình đại diện Kho ứng dụng, Học liệu số và Thí nghiệm"
               >
                 <ImageIcon className="w-3 h-3 text-sky-400" />
@@ -103,6 +95,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
                   {currentUser?.fullName}
                 </span>
                 <button
+                  type="button"
                   onClick={onLogout}
                   className="ml-1 text-[11px] text-rose-600 hover:underline cursor-pointer"
                 >
@@ -110,33 +103,34 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
                 </button>
               </div>
 
-              {/* AI Credit Pill */}
+              {/* AI Credit & Contact Admin Button */}
               <button
                 type="button"
-                onClick={onOpenRedeemCode}
+                onClick={onOpenContactAdmin}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer ${
                   isLowCredits
                     ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
                     : 'bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100'
                 }`}
-                title="Nhập mã kích hoạt để nạp thêm tín dụng AI"
+                title="Liên hệ Quản trị viên khi hết tín dụng AI"
               >
                 <Coins
                   className={`w-4 h-4 ${isLowCredits ? 'text-rose-600' : 'text-amber-600'}`}
                 />
-                <span>{totalCredits} tín dụng AI</span>
+                <span className="tabular-nums">{totalCredits} tín dụng AI</span>
                 <span
-                  className={`ml-1 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md ${
-                    isLowCredits ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'
+                  className={`ml-1 inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md ${
+                    isLowCredits ? 'bg-rose-600 text-white' : 'bg-sky-600 text-white'
                   }`}
                 >
-                  <KeyRound className="w-2.5 h-2.5" />
-                  <span>Nhập mã</span>
+                  <Phone className="w-2.5 h-2.5" />
+                  <span>Liên hệ Quản trị viên</span>
                 </span>
               </button>
             </div>
           ) : (
             <button
+              type="button"
               onClick={onOpenAuth}
               className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-xs transition-colors cursor-pointer"
             >
@@ -154,6 +148,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
             </span>
             <div className="flex items-center gap-1">
               <button
+                type="button"
                 onClick={onEditSelected}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-sky-700 bg-white hover:bg-sky-100 rounded-lg border border-sky-200 transition-colors cursor-pointer"
               >
@@ -161,6 +156,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
                 <span>Sửa</span>
               </button>
               <button
+                type="button"
                 onClick={onDeleteSelected}
                 className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 bg-white hover:bg-rose-50 rounded-lg border border-rose-200 transition-colors cursor-pointer"
               >
@@ -174,6 +170,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
         {/* Right Side: Primary Utilities */}
         <div className="flex items-center flex-wrap gap-2">
           <button
+            type="button"
             onClick={onResetView}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-sky-700 bg-sky-50 hover:bg-sky-100 border border-sky-200 rounded-xl transition-colors cursor-pointer"
             title="Về Trang chủ / Đầu trang"
@@ -183,6 +180,7 @@ export const ControlDeck: React.FC<ControlDeckProps> = ({
           </button>
 
           <button
+            type="button"
             onClick={onToggleFullscreen}
             className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl transition-colors cursor-pointer"
             title="Toàn màn hình"

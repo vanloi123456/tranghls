@@ -839,7 +839,7 @@ async function startServer() {
           action: rawAction,
           user: teacher,
           message:
-            `Số dư tín dụng AI không đủ hoặc đã hết (thao tác này cần ${cost} tín dụng AI). Hệ thống sẽ tự động làm mới 5 tín dụng AI miễn phí sau 24 giờ, hoặc liên lạc Quản trị viên qua số điện thoại 0775987267 để nhận mã kích hoạt.`,
+            `Số dư tín dụng AI không đủ hoặc đã hết (thao tác này cần ${cost} tín dụng AI). Hệ thống sẽ tự động làm mới 5 tín dụng AI miễn phí sau 24 giờ, hoặc vui lòng liên hệ Quản trị viên qua số điện thoại 0775987267 để tiếp tục sử dụng.`,
         });
       }
 

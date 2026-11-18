@@ -62,9 +62,9 @@ export default function App() {
   const [role, setRole] = useState<UserRole>(() => authService.getCurrentRole());
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState(false);
-  const [adminPanelTab, setAdminPanelTab] = useState<'teachers' | 'promo_codes' | 'branding'>('teachers');
+  const [adminPanelTab, setAdminPanelTab] = useState<'teachers' | 'branding'>('teachers');
 
-  // AI Credits Redeem Code modal
+  // AI Credits / Contact Admin modal
   const [isCreditModalOpen, setIsCreditModalOpen] = useState(false);
   const [creditModalReason, setCreditModalReason] = useState<string | undefined>(undefined);
   const [requiredCreditsForModal, setRequiredCreditsForModal] = useState<number>(MIN_CREDIT_COST);
@@ -75,7 +75,7 @@ export default function App() {
     opener: (item: ContentItem) => void;
   } | null>(null);
 
-  const handleOpenAdminPanel = (tab: 'teachers' | 'promo_codes' | 'branding' = 'teachers') => {
+  const handleOpenAdminPanel = (tab: 'teachers' | 'branding' = 'teachers') => {
     setAdminPanelTab(tab);
     setIsAdminPanelOpen(true);
   };
@@ -225,7 +225,7 @@ export default function App() {
     const nextResetAt = authService.getNextFreeResetTimestamp(currentUser);
     let timerId: number | undefined;
     if (nextResetAt) {
-      const remainingMs = Math.max(1000, nextResetAt - Date.now() + 500);
+      const remainingMs = Math.max(1000, nextResetAt - Date.now() + 2000);
       if (remainingMs <= 2147483647) {
         timerId = window.setTimeout(checkAndRefreshIfDue, remainingMs);
       }
@@ -531,7 +531,7 @@ export default function App() {
       setRequiredCreditsForModal(needed);
       setCreditModalReason(
         res.message ||
-          `Tín dụng AI không đủ hoặc đã hết (cần ${needed} tín dụng AI). Vui lòng liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để nhận mã kích hoạt.`
+          `Số dư tín dụng AI không đủ hoặc đã hết (cần ${needed} tín dụng AI). Vui lòng liên hệ Quản trị viên qua số điện thoại ${ADMIN_PHONE} để tiếp tục sử dụng.`
       );
       setIsCreditModalOpen(true);
       return;
@@ -707,7 +707,7 @@ export default function App() {
         branding={branding}
         onOpenAuth={handleOpenAuth}
         onOpenAdminPanel={() => handleOpenAdminPanel('teachers')}
-        onOpenRedeemCode={() => {
+        onOpenContactAdmin={() => {
           setPendingLaunch(null);
           setRequiredCreditsForModal(MIN_CREDIT_COST);
           setCreditModalReason(undefined);
@@ -742,17 +742,20 @@ export default function App() {
         }}
       />
 
-      {/* Fixed Sticky Top Header (Mobile Nav Header + Workspace Control Deck + Breadcrumb Bar) */}
-      <div className="sticky top-0 z-30 bg-white/82 backdrop-blur-xl border-b border-sky-200/75 shadow-xs">
-        <Header onOpenMobileMenu={() => setIsMobileMenuOpen(true)} />
-        <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-2.5 sm:py-3">
+      {/* Fixed Sticky Top Area (Compact Top Banner + Workspace Control Deck + Breadcrumb Bar) */}
+      <div className="sticky top-0 z-30 bg-white/85 backdrop-blur-xl border-b border-sky-200/75 shadow-xs">
+        <Header
+          onOpenMobileMenu={() => setIsMobileMenuOpen(true)}
+          onNavigateHome={navigateToHome}
+        />
+        <div className="max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-2 sm:py-2.5">
           <ControlDeck
             role={role}
             currentUser={currentUser}
             onOpenAuth={handleOpenAuth}
             onOpenAdminPanel={() => handleOpenAdminPanel('teachers')}
             onOpenAdminPanelTab={handleOpenAdminPanel}
-            onOpenRedeemCode={() => {
+            onOpenContactAdmin={() => {
               setPendingLaunch(null);
               setRequiredCreditsForModal(MIN_CREDIT_COST);
               setCreditModalReason(undefined);

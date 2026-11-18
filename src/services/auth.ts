@@ -25,9 +25,6 @@ import {
   signInWithRedirect,
   getRedirectResult,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  updateProfile,
-  sendEmailVerification,
   signOut,
   User as FirebaseUser,
 } from 'firebase/auth';
@@ -42,6 +39,7 @@ import {
   Timestamp,
   collection,
   getDocs,
+  onSnapshot,
   query,
   orderBy,
 } from 'firebase/firestore';
@@ -173,7 +171,6 @@ class AuthService {
   private cachedTeachers: UserAccount[] = [];
   private cachedPromoCodes: PromoCode[] = [];
   private accountsSeedingPromise: Promise<void> | null = null;
-  private pendingDisplayNames = new Map<string, string>();
   private syncingProfilePromises = new Map<
     string,
     Promise<{ success: boolean; message: string; user?: UserAccount }>
@@ -181,6 +178,13 @@ class AuthService {
 
   constructor() {
     this.initFromStorage();
+  }
+
+  isFirebaseAdminConnected(): boolean {
+    return Boolean(
+      auth.currentUser?.emailVerified &&
+        auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()
+    );
   }
 
   private initFromStorage(): void {
@@ -398,20 +402,17 @@ class AuthService {
       console.warn('Could not fetch teachers from server, using Firestore/seed cache:', err);
     }
 
-    if (
-      auth.currentUser?.emailVerified &&
-      auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()
-    ) {
+    if (this.isFirebaseAdminConnected()) {
       await this.ensureAccountsSeededToFirestore();
       const path = 'users';
       try {
-        const snap = await getDocs(query(collection(db, path), orderBy('createdAt', 'desc')));
+        const snap = await getDocs(collection(db, path));
         const fsList = snap.docs.map((d) => {
           const data = d.data();
           return {
             id: d.id,
-            email: data.email,
-            fullName: data.fullName,
+            email: data.email || '',
+            fullName: data.fullName || 'Giáo viên',
             photoURL: data.photoURL,
             role: data.role || 'teacher',
             status: 'active',
@@ -449,6 +450,54 @@ class AuthService {
 
     const fallback = this.getTeachers();
     return fallback.length > 0 ? fallback : getBundledSeedTeachers();
+  }
+
+  subscribeTeachersRealtime(onTeachers: (teachers: UserAccount[]) => void): () => void {
+    if (!this.isFirebaseAdminConnected()) {
+      return () => {};
+    }
+    try {
+      return onSnapshot(
+        collection(db, 'users'),
+        (snap) => {
+          const fsList = snap.docs.map((d) => {
+            const data = d.data();
+            return {
+              id: d.id,
+              email: data.email || '',
+              fullName: data.fullName || 'Giáo viên',
+              photoURL: data.photoURL,
+              role: data.role || 'teacher',
+              status: 'active',
+              credits: typeof data.credits === 'number' ? data.credits : INITIAL_FREE_CREDITS,
+              lastFreeResetAt: toMillis(data.lastFreeResetAt ?? data.createdAt),
+              lastRedeemedCode: data.lastRedeemedCode,
+              createdAt: toMillis(data.createdAt),
+              updatedAt: toMillis(data.updatedAt),
+            } as UserAccount;
+          });
+
+          const mergedMap = new Map<string, UserAccount>();
+          for (const t of getBundledSeedTeachers()) mergedMap.set(t.id, t);
+          for (const t of this.cachedTeachers) mergedMap.set(t.id, t);
+          for (const t of fsList) mergedMap.set(t.id, t);
+
+          const list = Array.from(mergedMap.values()).sort(
+            (a, b) => (b.createdAt || 0) - (a.createdAt || 0)
+          );
+          this.cachedTeachers = list;
+          try {
+            localStorage.setItem(TEACHERS_STORAGE_KEY, JSON.stringify(list));
+          } catch {}
+          onTeachers(list);
+        },
+        (err) => {
+          console.warn('Firestore teachers snapshot warning:', err);
+        }
+      );
+    } catch {
+      return () => {};
+    }
   }
 
   getTeachers(): UserAccount[] {
@@ -740,48 +789,7 @@ class AuthService {
     }
   }
 
-  // Email & Password Registration for new teacher accounts
-  async registerWithEmailPassword(
-    fullName: string,
-    email: string,
-    password: string
-  ): Promise<{ success: boolean; message: string; user?: UserAccount }> {
-    const cleanEmail = email.trim().toLowerCase();
-    const cleanName = fullName.trim().slice(0, 150) || cleanEmail.split('@')[0] || 'Giáo viên';
-
-    if (!cleanEmail || !password) {
-      return { success: false, message: 'Vui lòng nhập đầy đủ thông tin đăng ký.' };
-    }
-    if (password.length < 6) {
-      return { success: false, message: 'Mật khẩu phải có ít nhất 6 ký tự.' };
-    }
-    if (cleanEmail === ADMIN_CREDENTIALS.email.toLowerCase()) {
-      return {
-        success: false,
-        message: 'Tài khoản này đã được đăng ký. Vui lòng chuyển sang Đăng nhập.',
-      };
-    }
-
-    this.pendingDisplayNames.set(cleanEmail, cleanName);
-    try {
-      const cred = await createUserWithEmailAndPassword(auth, cleanEmail, password);
-      try {
-        await updateProfile(cred.user, { displayName: cleanName });
-      } catch {}
-      sendEmailVerification(cred.user).catch(() => {});
-      const synced = await this.syncFirebaseUserProfile(cred.user);
-      return synced;
-    } catch (err: any) {
-      return {
-        success: false,
-        message: formatGoogleAuthError(err),
-      };
-    } finally {
-      this.pendingDisplayNames.delete(cleanEmail);
-    }
-  }
-
-  // Sync Firebase User with Firestore /users/{uid} (credits: 10 for new users) & backend /api/auth/google
+  // Sync Firebase User with Firestore /users/{uid} (5 daily free credits, auto-refreshed after 24h)
   // Deduplicates concurrent calls for the same UID (e.g. signInWithPopup + onAuthStateChanged firing together)
   async syncFirebaseUserProfile(fbUser: FirebaseUser): Promise<{
     success: boolean;
@@ -807,9 +815,9 @@ class AuthService {
   }> {
     const rawEmail = (fbUser.email || '').trim();
     const email = rawEmail.toLowerCase().slice(0, 200);
-    const fullName = (
+    const hasProviderDisplayName = Boolean(fbUser.displayName?.trim());
+    let fullName = (
       fbUser.displayName?.trim() ||
-      this.pendingDisplayNames.get(email) ||
       email.split('@')[0] ||
       'Giáo viên'
     ).slice(0, 150);
@@ -865,6 +873,9 @@ class AuthService {
         }
       } else {
         const data = snap.data();
+        if (!hasProviderDisplayName && typeof data.fullName === 'string' && data.fullName.trim()) {
+          fullName = data.fullName.trim().slice(0, 150);
+        }
         firestoreCredits =
           typeof data.credits === 'number' ? data.credits : INITIAL_FREE_CREDITS;
         firestoreCreatedAt = toMillis(data.createdAt);
@@ -890,7 +901,10 @@ class AuthService {
           }
         }
 
-        if (data.fullName !== fullName || (photoURL && data.photoURL !== photoURL)) {
+        if (
+          (hasProviderDisplayName && data.fullName !== fullName) ||
+          (photoURL && data.photoURL !== photoURL)
+        ) {
           const profilePatch: Record<string, any> = {
             fullName,
             updatedAt: serverTimestamp(),
@@ -994,7 +1008,7 @@ class AuthService {
             user: data.user || user,
             message:
               data.message ||
-              `Số dư tín dụng AI không đủ hoặc đã hết (cần ${expectedCost} tín dụng AI). Vui lòng liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để nhận mã kích hoạt.`,
+              `Số dư tín dụng AI không đủ hoặc đã hết (cần ${expectedCost} tín dụng AI). Vui lòng liên hệ Quản trị viên qua số điện thoại ${ADMIN_PHONE} để được cấp thêm tín dụng và tiếp tục sử dụng.`,
           };
         }
 
@@ -1049,7 +1063,7 @@ class AuthService {
               insufficientCredits: true,
               requiredCredits: expectedCost,
               user: syncedUser,
-              message: `Số dư tín dụng AI không đủ hoặc đã hết (thao tác này cần ${expectedCost} tín dụng AI). Hệ thống sẽ tự động làm mới 5 tín dụng AI miễn phí sau 24 giờ, hoặc liên lạc Quản trị viên qua số điện thoại ${ADMIN_PHONE} để nhận mã kích hoạt.`,
+              message: `Số dư tín dụng AI không đủ hoặc đã hết (thao tác này cần ${expectedCost} tín dụng AI). Hệ thống sẽ tự động làm mới 5 tín dụng AI miễn phí sau 24 giờ, hoặc vui lòng liên hệ Quản trị viên qua số điện thoại ${ADMIN_PHONE} để tiếp tục sử dụng.`,
             };
           }
 
@@ -1277,13 +1291,13 @@ class AuthService {
     return false;
   }
 
-  // Admin directly adds credits / issues an activation code to a teacher account (records in lastRedeemedCode & promo_codes)
+  // Admin directly adds credits to a teacher account (works seamlessly on Express & static Vercel/Firestore)
   async adminTopUpCredits(
     teacherId: string,
     amount: number,
     code?: string
   ): Promise<{ success: boolean; message: string; user?: UserAccount; code?: string }> {
-    let data: any = null;
+    const addedAmount = Math.max(1, Math.floor(amount || 0));
     try {
       const headers = await this.getAdminHeaders();
       const res = await fetch('/api/credits/topup', {
@@ -1291,119 +1305,87 @@ class AuthService {
         headers,
         body: JSON.stringify({
           teacherId,
-          amount,
+          amount: addedAmount,
           ...(code ? { code: code.trim().toUpperCase() } : {}),
         }),
       });
-      data = await parseJsonSafe(res);
+      const data = await parseJsonSafe(res);
       if (data) {
         if (data.success) {
-          const issuedCode: string | undefined = data.code || data.user?.lastRedeemedCode;
-          const addedAmount = Number(data.addedCredits || amount || 0);
-
-          if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
+          if (this.isFirebaseAdminConnected()) {
             try {
-              if (issuedCode && PROMO_CODE_REGEX.test(issuedCode)) {
-                const promoRef = doc(db, 'promo_codes', issuedCode);
-                const promoSnap = await getDoc(promoRef);
-                if (!promoSnap.exists()) {
-                  await setDoc(promoRef, {
-                    code: issuedCode,
-                    credit_value: addedAmount,
-                    is_used: true,
-                    used_by: teacherId,
-                    used_at: serverTimestamp(),
-                    created_by: ADMIN_CREDENTIALS.email,
-                    created_at: serverTimestamp(),
-                  });
-                } else if (!promoSnap.data()?.is_used) {
-                  await updateDoc(promoRef, {
-                    is_used: true,
-                    used_by: teacherId,
-                    used_at: serverTimestamp(),
-                  });
-                }
-              }
-
               const teacherRef = doc(db, 'users', teacherId);
               const snap = await getDoc(teacherRef);
               if (snap.exists()) {
                 const currCredits = Number(snap.data().credits || 0);
-                const userPatch: Record<string, any> = {
+                await updateDoc(teacherRef, {
                   credits: currCredits + addedAmount,
                   updatedAt: serverTimestamp(),
-                };
-                if (issuedCode && PROMO_CODE_REGEX.test(issuedCode)) {
-                  userPatch.lastRedeemedCode = issuedCode;
-                }
-                await updateDoc(teacherRef, userPatch);
+                });
               }
             } catch (err) {
-              console.warn('Firestore admin topup/code sync warning:', err);
+              console.warn('Firestore admin topup sync warning:', err);
             }
           }
 
-          await Promise.all([this.fetchTeachersFromServer(), this.fetchPromoCodes()]);
+          await this.fetchTeachersFromServer();
           return {
             success: true,
-            message: data.message,
+            message: `Đã cộng +${addedAmount} tín dụng AI thành công!`,
             user: data.user,
-            code: issuedCode,
           };
         }
-        return { success: false, message: data.message || 'Không thể cấp mã / cộng tín dụng' };
+        // Only return error immediately if it's NOT a 404 (404 happens when teacher registered on Vercel/Firestore only)
+        if (res.status !== 404 || !this.isFirebaseAdminConnected()) {
+          return { success: false, message: data.message || 'Không thể cộng tín dụng AI.' };
+        }
       }
     } catch {}
 
-    // Direct Firestore fallback for Admin on static Vercel hosting
-    if (auth.currentUser?.email?.toLowerCase() === ADMIN_CREDENTIALS.email.toLowerCase()) {
-      const addedAmount = Math.max(1, Math.floor(amount || 0));
-      const issuedCode = (
-        code?.trim().toUpperCase() ||
-        `AI${addedAmount}_${Math.random().toString(36).slice(2, 7).toUpperCase()}`
-      ).slice(0, 64);
+    // Direct Firestore update for Admin (static Vercel hosting or Firestore-only teachers)
+    if (this.isFirebaseAdminConnected()) {
       const teacherRef = doc(db, 'users', teacherId);
-      const promoRef = doc(db, 'promo_codes', issuedCode);
       try {
-        const [teacherSnap, promoSnap] = await Promise.all([getDoc(teacherRef), getDoc(promoRef)]);
-        if (!teacherSnap.exists()) {
-          return { success: false, message: 'Không tìm thấy tài khoản giáo viên trên Firestore.' };
-        }
-        if (!promoSnap.exists()) {
-          await setDoc(promoRef, {
-            code: issuedCode,
-            credit_value: addedAmount,
-            is_used: true,
-            used_by: teacherId,
-            used_at: serverTimestamp(),
-            created_by: ADMIN_CREDENTIALS.email,
-            created_at: serverTimestamp(),
+        const teacherSnap = await getDoc(teacherRef);
+        if (teacherSnap.exists()) {
+          const currCredits = Number(teacherSnap.data().credits || 0);
+          await updateDoc(teacherRef, {
+            credits: currCredits + addedAmount,
+            updatedAt: serverTimestamp(),
           });
-        } else if (!promoSnap.data()?.is_used) {
-          await updateDoc(promoRef, {
-            is_used: true,
-            used_by: teacherId,
-            used_at: serverTimestamp(),
+        } else {
+          const cachedTeacher = this.getTeachers().find((t) => t.id === teacherId);
+          if (!cachedTeacher) {
+            return { success: false, message: 'Không tìm thấy tài khoản giáo viên trên Firestore.' };
+          }
+          await setDoc(teacherRef, {
+            uid: cachedTeacher.id,
+            email: cachedTeacher.email.trim().slice(0, 200),
+            fullName: (cachedTeacher.fullName || 'Giáo viên').slice(0, 150),
+            role: 'teacher',
+            credits: Math.max(0, Math.floor((cachedTeacher.credits || 0) + addedAmount)),
+            lastFreeResetAt: cachedTeacher.lastFreeResetAt
+              ? Timestamp.fromMillis(cachedTeacher.lastFreeResetAt)
+              : serverTimestamp(),
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            ...(cachedTeacher.photoURL ? { photoURL: cachedTeacher.photoURL.slice(0, 500) } : {}),
           });
         }
-        const currCredits = Number(teacherSnap.data().credits || 0);
-        await updateDoc(teacherRef, {
-          credits: currCredits + addedAmount,
-          lastRedeemedCode: issuedCode,
-          updatedAt: serverTimestamp(),
-        });
-        await Promise.all([this.fetchTeachersFromServer(), this.fetchPromoCodes()]);
+        await this.fetchTeachersFromServer();
         return {
           success: true,
-          message: `Đã cấp mã ${issuedCode} (+${addedAmount} tín dụng AI) thành công!`,
-          code: issuedCode,
+          message: `Đã cộng +${addedAmount} tín dụng AI thành công!`,
         };
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, `users/${teacherId}`);
       }
     }
 
-    return { success: false, message: 'Lỗi kết nối máy chủ khi cấp mã kích hoạt' };
+    return {
+      success: false,
+      message: 'Vui lòng đăng nhập bằng tài khoản Google Quản trị để cộng tín dụng trực tuyến.',
+    };
   }
 
   // Admin login check
@@ -1447,6 +1429,14 @@ class AuthService {
       await fetch(`/api/teachers/${teacherId}`, { method: 'DELETE', headers });
     } catch (err) {
       console.warn('Server delete failed, deleting locally:', err);
+    }
+
+    if (this.isFirebaseAdminConnected()) {
+      try {
+        await deleteDoc(doc(db, 'users', teacherId));
+      } catch (err) {
+        console.warn('Firestore teacher delete warning:', err);
+      }
     }
 
     let teachers = this.getTeachers();
